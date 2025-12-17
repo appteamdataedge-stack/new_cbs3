@@ -1,0 +1,38 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.1.5)
+
+2025-11-19 12:15:08 [main] INFO  c.e.m.MoneyMarketApplication [] - Starting MoneyMarketApplication v0.0.1-SNAPSHOT using Java 21.0.9 with PID 6352 (C:\cbs_prototype\cbs3\moneymarket\target\moneymarket-0.0.1-SNAPSHOT.jar started by Administrator in C:\cbs_prototype\cbs3\moneymarket)
+2025-11-19 12:15:08 [main] DEBUG c.e.m.MoneyMarketApplication [] - Running with Spring Boot v3.1.5, Spring v6.0.13
+2025-11-19 12:15:08 [main] INFO  c.e.m.MoneyMarketApplication [] - The following 1 profile is active: "default"
+2025-11-19 12:15:14 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate [] - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-11-19 12:15:14 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate [] - Finished Spring Data repository scanning in 434 ms. Found 23 JPA repository interfaces.
+2025-11-19 12:15:17 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer [] - Tomcat initialized with port(s): 8082 (http)
+2025-11-19 12:15:17 [main] INFO  o.a.catalina.core.StandardService [] - Starting service [Tomcat]
+2025-11-19 12:15:17 [main] INFO  o.a.catalina.core.StandardEngine [] - Starting Servlet engine: [Apache Tomcat/10.1.15]
+2025-11-19 12:15:18 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] [] - Initializing Spring embedded WebApplicationContext
+2025-11-19 12:15:18 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext [] - Root WebApplicationContext: initialization completed in 9741 ms
+CORS Allowed Origins: [http://localhost:3000, http://localhost:4173, http://localhost:5173, http://localhost:5174, http://localhost:5175, http://localhost:5176, http://localhost:5177, http://localhost:5178, https://cbs3.vercel.app, https://moneymarket.duckdns.org]
+2025-11-19 12:15:19 [main] INFO  o.h.jpa.internal.util.LogHelper [] - HHH000204: Processing PersistenceUnitInfo [name: default]
+2025-11-19 12:15:22 [main] INFO  org.hibernate.Version [] - HHH000412: Hibernate ORM core version 6.2.13.Final
+2025-11-19 12:15:22 [main] INFO  org.hibernate.cfg.Environment [] - HHH000406: Using bytecode reflection optimizer
+2025-11-19 12:15:23 [main] INFO  o.s.o.j.p.SpringPersistenceUnitInfo [] - No LoadTimeWeaver setup: ignoring JPA class transformer
+2025-11-19 12:15:23 [main] INFO  com.zaxxer.hikari.HikariDataSource [] - HikariPool-1 - Starting...
+2025-11-19 12:15:24 [main] INFO  com.zaxxer.hikari.pool.HikariPool [] - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@692e028d
+2025-11-19 12:15:24 [main] INFO  com.zaxxer.hikari.HikariDataSource [] - HikariPool-1 - Start completed.
+2025-11-19 12:15:24 [main] WARN  org.hibernate.orm.deprecation [] - HHH90000025: MySQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2025-11-19 12:15:29 [main] INFO  o.h.e.t.j.p.i.JtaPlatformInitiator [] - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2025-11-19 12:15:29 [main] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean [] - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2025-11-19 12:15:31 [main] INFO  o.s.d.j.r.query.QueryEnhancerFactory [] - Hibernate is in classpath; If applicable, HQL parser will be used.
+2025-11-19 12:15:40 [main] WARN  o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration [] - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2025-11-19 12:15:43 [main] INFO  o.s.b.a.e.web.EndpointLinksResolver [] - Exposing 3 endpoint(s) beneath base path '/actuator'
+2025-11-19 12:15:44 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer [] - Tomcat started on port(s): 8082 (http) with context path ''
+2025-11-19 12:15:44 [main] INFO  c.e.m.MoneyMarketApplication [] - Started MoneyMarketApplication in 37.384 seconds (process running for 39.89)
+2025-11-19 12:18:28 [http-nio-8082-exec-1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] [] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2025-11-19 12:18:28 [http-nio-8082-exec-1] INFO  o.s.web.servlet.DispatcherServlet [] - Initializing Servlet 'dispatcherServlet'
+2025-11-19 12:18:28 [http-nio-8082-exec-1] INFO  o.s.web.servlet.DispatcherServlet [] - Completed initialization in 3 ms

@@ -1,0 +1,23 @@
+{
+  "userId": "ADMIN",
+  "lines": [
+    {
+      "accountNo": "1000000099001",
+      "tranCcy": "USD",
+      "drCrFlag": "C",
+      "fcyAmt": 50.00,
+      "exchangeRate": 110.5000,
+      "lcyAmt": 5525.00,
+      "narration": "MCT Test - USD Credit"
+    },
+    {
+      "accountNo": "922030200101",
+      "tranCcy": "USD",
+      "drCrFlag": "D",
+      "fcyAmt": 50.00,
+      "exchangeRate": 110.5000,
+      "lcyAmt": 5525.00,
+      "narration": "MCT Test - USD Debit"
+    }
+  ]
+}

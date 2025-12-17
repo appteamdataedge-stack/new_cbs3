@@ -1,0 +1,18 @@
+Subproduct-wise Account & GL Balance Report
+As of: 2025-03-27
+
+Sub Product Code,Sub Product Name,GL Number,GL Name,Account Count,Total Account Balance,Total GL Balance,Difference,Status
+CAREG,Current Account Regular,110102001,Current Account Regular,4,0,951408.00,-951408.00,MISMATCHED
+CTLR1,Cash Teller 1,220202001,CTLR1,2,0,-2714819.00,2714819.00,MISMATCHED
+FACHR,Fixed Assets Chair,220101001,FACHR,1,0,-54000.00,54000.00,MISMATCHED
+ODATD,Overdraft against Term Deposit,210201001,OD against TD,2,0,-50000.00,50000.00,MISMATCHED
+RCMIS,Miscellaneous Receivables,230201001,RBMIS,1,0,-1545656.00,1545656.00,MISMATCHED
+SBREG,Savings Bank Regular,110101001,Savings Bank Regular,5,2243000.00,2253000.00,-10000.00,MISMATCHED
+SBSRC,Savings Bank Sr Citizen,110101002,Savings Bank (Sr. Citizen),1,0,0.00,0.00,MATCHED
+STLTR,Short Term Loan Trade,210102001,STLTR,0,0,0,0,MATCHED
+TDPIP,Term Deposit Periodical Intt Payment,110201002,Term Deposit Non Cum,3,0,1160067.00,-1160067.00,MISMATCHED
+---,---,---,---,---,---,---,---,---
+TOTAL,,9 Subproducts,,19,2243000.00,0.00,2243000.00,"2 Matched, 7 Mismatched"
+
+WARNING: There are mismatches between Account Balances and GL Balances!
+Please investigate and reconcile the mismatched subproducts.

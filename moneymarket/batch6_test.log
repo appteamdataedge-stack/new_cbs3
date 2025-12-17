@@ -1,0 +1,3127 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.1.5)
+
+2025-11-26 14:04:15 [main] INFO  c.e.m.MoneyMarketApplication [] - Starting MoneyMarketApplication v0.0.1-SNAPSHOT using Java 21.0.9 with PID 6948 (C:\cbs_prototype\cbs3\moneymarket\target\moneymarket-0.0.1-SNAPSHOT.jar started by Administrator in C:\cbs_prototype\cbs3\moneymarket)
+2025-11-26 14:04:15 [main] DEBUG c.e.m.MoneyMarketApplication [] - Running with Spring Boot v3.1.5, Spring v6.0.13
+2025-11-26 14:04:15 [main] INFO  c.e.m.MoneyMarketApplication [] - The following 1 profile is active: "default"
+2025-11-26 14:04:20 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate [] - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-11-26 14:04:21 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate [] - Finished Spring Data repository scanning in 965 ms. Found 24 JPA repository interfaces.
+2025-11-26 14:04:24 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer [] - Tomcat initialized with port(s): 8082 (http)
+2025-11-26 14:04:24 [main] INFO  o.a.catalina.core.StandardService [] - Starting service [Tomcat]
+2025-11-26 14:04:24 [main] INFO  o.a.catalina.core.StandardEngine [] - Starting Servlet engine: [Apache Tomcat/10.1.15]
+2025-11-26 14:04:24 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] [] - Initializing Spring embedded WebApplicationContext
+2025-11-26 14:04:24 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext [] - Root WebApplicationContext: initialization completed in 8615 ms
+CORS Allowed Origins: [http://localhost:3000, http://localhost:4173, http://localhost:5173, http://localhost:5174, http://localhost:5175, http://localhost:5176, http://localhost:5177, http://localhost:5178, https://cbs3.vercel.app, https://moneymarket.duckdns.org]
+2025-11-26 14:04:28 [main] INFO  o.f.c.i.license.VersionPrinter [] - Flyway Community Edition 9.16.3 by Redgate
+2025-11-26 14:04:28 [main] INFO  o.f.c.i.license.VersionPrinter [] - See release notes here: https://rd.gt/416ObMi
+2025-11-26 14:04:28 [main] INFO  o.f.c.i.license.VersionPrinter [] - 
+2025-11-26 14:04:28 [main] INFO  com.zaxxer.hikari.HikariDataSource [] - HikariPool-1 - Starting...
+2025-11-26 14:04:30 [main] INFO  com.zaxxer.hikari.pool.HikariPool [] - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@47ad69f7
+2025-11-26 14:04:30 [main] INFO  com.zaxxer.hikari.HikariDataSource [] - HikariPool-1 - Start completed.
+2025-11-26 14:04:30 [main] INFO  o.f.c.i.d.base.BaseDatabaseType [] - Database: jdbc:mysql://127.0.0.1:3306/moneymarketdb (MySQL 8.0)
+2025-11-26 14:04:31 [main] INFO  o.f.core.internal.command.DbValidate [] - Successfully validated 25 migrations (execution time 00:00.704s)
+2025-11-26 14:04:31 [main] INFO  o.f.core.internal.command.DbMigrate [] - Current version of schema `moneymarketdb`: 24
+2025-11-26 14:04:31 [main] INFO  o.f.core.internal.command.DbMigrate [] - Schema `moneymarketdb` is up to date. No migration necessary.
+2025-11-26 14:04:31 [main] INFO  o.h.jpa.internal.util.LogHelper [] - HHH000204: Processing PersistenceUnitInfo [name: default]
+2025-11-26 14:04:31 [main] INFO  org.hibernate.Version [] - HHH000412: Hibernate ORM core version 6.2.13.Final
+2025-11-26 14:04:31 [main] INFO  org.hibernate.cfg.Environment [] - HHH000406: Using bytecode reflection optimizer
+2025-11-26 14:04:32 [main] INFO  o.s.o.j.p.SpringPersistenceUnitInfo [] - No LoadTimeWeaver setup: ignoring JPA class transformer
+2025-11-26 14:04:32 [main] WARN  org.hibernate.orm.deprecation [] - HHH90000025: MySQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2025-11-26 14:04:37 [main] INFO  o.h.e.t.j.p.i.JtaPlatformInitiator [] - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2025-11-26 14:04:37 [main] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean [] - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2025-11-26 14:04:37 [main] INFO  o.s.d.j.r.query.QueryEnhancerFactory [] - Hibernate is in classpath; If applicable, HQL parser will be used.
+2025-11-26 14:04:45 [main] WARN  o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration [] - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2025-11-26 14:04:47 [main] INFO  o.s.b.a.e.web.EndpointLinksResolver [] - Exposing 3 endpoint(s) beneath base path '/actuator'
+2025-11-26 14:04:47 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer [] - Tomcat started on port(s): 8082 (http) with context path ''
+2025-11-26 14:04:47 [main] INFO  c.e.m.MoneyMarketApplication [] - Started MoneyMarketApplication in 33.52 seconds (process running for 35.73)
+2025-11-26 14:05:19 [http-nio-8082-exec-1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] [] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2025-11-26 14:05:19 [http-nio-8082-exec-1] INFO  o.s.web.servlet.DispatcherServlet [] - Initializing Servlet 'dispatcherServlet'
+2025-11-26 14:05:19 [http-nio-8082-exec-1] INFO  o.s.web.servlet.DispatcherServlet [] - Completed initialization in 0 ms
+2025-11-26 14:05:42 [http-nio-8082-exec-2] INFO  c.e.m.controller.EODJobController [] - Received request to execute EOD Job 6 by user: ADMIN
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+Hibernate: 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG c.e.m.service.SystemDateService [] - Retrieved System_Date from Parameter_Table: 2025-04-05
+2025-11-26 14:05:42 [http-nio-8082-exec-2] INFO  c.e.m.s.EODJobManagementService [] - Executing EOD Job 6: Interest Accrual Account Balance Update for user: ADMIN
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        e1_0.eod_log_id,
+        e1_0.created_timestamp,
+        e1_0.end_timestamp,
+        e1_0.eod_date,
+        e1_0.error_message,
+        e1_0.failed_at_step,
+        e1_0.job_name,
+        e1_0.records_processed,
+        e1_0.start_timestamp,
+        e1_0.status,
+        e1_0.system_date,
+        e1_0.user_id 
+    from
+        eod_log_table e1_0 
+    where
+        e1_0.eod_date=? 
+        and e1_0.job_name=? 
+    order by
+        e1_0.start_timestamp desc 
+    limit
+        ?
+Hibernate: 
+    select
+        e1_0.eod_log_id,
+        e1_0.created_timestamp,
+        e1_0.end_timestamp,
+        e1_0.eod_date,
+        e1_0.error_message,
+        e1_0.failed_at_step,
+        e1_0.job_name,
+        e1_0.records_processed,
+        e1_0.start_timestamp,
+        e1_0.status,
+        e1_0.system_date,
+        e1_0.user_id 
+    from
+        eod_log_table e1_0 
+    where
+        e1_0.eod_date=? 
+        and e1_0.job_name=? 
+    order by
+        e1_0.start_timestamp desc 
+    limit
+        ?
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        e1_0.eod_log_id,
+        e1_0.created_timestamp,
+        e1_0.end_timestamp,
+        e1_0.eod_date,
+        e1_0.error_message,
+        e1_0.failed_at_step,
+        e1_0.job_name,
+        e1_0.records_processed,
+        e1_0.start_timestamp,
+        e1_0.status,
+        e1_0.system_date,
+        e1_0.user_id 
+    from
+        eod_log_table e1_0 
+    where
+        e1_0.eod_date=? 
+        and e1_0.job_name=? 
+    order by
+        e1_0.start_timestamp desc 
+    limit
+        ?
+Hibernate: 
+    select
+        e1_0.eod_log_id,
+        e1_0.created_timestamp,
+        e1_0.end_timestamp,
+        e1_0.eod_date,
+        e1_0.error_message,
+        e1_0.failed_at_step,
+        e1_0.job_name,
+        e1_0.records_processed,
+        e1_0.start_timestamp,
+        e1_0.status,
+        e1_0.system_date,
+        e1_0.user_id 
+    from
+        eod_log_table e1_0 
+    where
+        e1_0.eod_date=? 
+        and e1_0.job_name=? 
+    order by
+        e1_0.start_timestamp desc 
+    limit
+        ?
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+Hibernate: 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG c.e.m.service.SystemDateService [] - Retrieved System_Date from Parameter_Table: 2025-04-05
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG c.e.m.service.SystemDateService [] - Generated System_DateTime: 2025-04-05T14:05:42.462671200
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+Hibernate: 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG c.e.m.service.SystemDateService [] - Retrieved System_Date from Parameter_Table: 2025-04-05
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG c.e.m.service.SystemDateService [] - Generated System_DateTime: 2025-04-05T14:05:42.462671200
+2025-11-26 14:05:42 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        eod_log_table
+        (created_timestamp,end_timestamp,eod_date,error_message,failed_at_step,job_name,records_processed,start_timestamp,status,system_date,user_id) 
+    values
+        (?,?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        eod_log_table
+        (created_timestamp,end_timestamp,eod_date,error_message,failed_at_step,job_name,records_processed,start_timestamp,status,system_date,user_id) 
+    values
+        (?,?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:43 [http-nio-8082-exec-2] INFO  c.e.m.s.InterestAccrualAccountBalanceService [] - Starting Batch Job 6: Interest Accrual Account Balance Update for date: 2025-04-05
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        distinct i1_0.account_no 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.accrual_date=?
+Hibernate: 
+    select
+        distinct i1_0.account_no 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.accrual_date=?
+2025-11-26 14:05:43 [http-nio-8082-exec-2] INFO  c.e.m.s.InterestAccrualAccountBalanceService [] - Found 10 unique accounts with interest accruals
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+Hibernate: 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000008001: GL_Num = 110203001
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000008001: Type = LIABILITY
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 100000008001 found accrual record for 2025-04-04 with Closing_Bal = 2.90
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000008001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000008001: Liability account - CR_Summation = 1.46
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000008001
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000008001: Regular DR=0, Regular CR=1.46, Value Date Impact=0
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000008001: Opening=2.90, DR=0, CR=1.46, Closing=4.36, Interest=1.46
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000008001 with GL_Num 110203001 and currency USD
+2025-11-26 14:05:43 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+Hibernate: 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000011001: GL_Num = 110101001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000011001: Type = LIABILITY
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 100000011001 found accrual record for 2025-04-04 with Closing_Bal = 1811.83
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000011001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000011001: Liability account - CR_Summation = 178.30
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000011001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000011001: Regular DR=0, Regular CR=178.30, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000011001: Opening=1811.83, DR=0, CR=178.30, Closing=1990.13, Interest=178.30
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000011001 with GL_Num 110101001 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+Hibernate: 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000013001: GL_Num = 110201002
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000013001: Type = LIABILITY
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 100000013001 found accrual record for 2025-04-04 with Closing_Bal = 180.84
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000013001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000013001: Liability account - CR_Summation = 4.11
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000013001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000013001: Regular DR=0, Regular CR=4.11, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000013001: Opening=180.84, DR=0, CR=4.11, Closing=184.95, Interest=4.11
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000013001 with GL_Num 110201002 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000071001: GL_Num = 110101001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000071001: Type = LIABILITY
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 100000071001 found accrual record for 2025-04-04 with Closing_Bal = 7796.26
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000071001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000071001: Liability account - CR_Summation = 21.76
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000071001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000071001: Regular DR=0, Regular CR=21.76, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000071001: Opening=7796.26, DR=0, CR=21.76, Closing=7818.02, Interest=21.76
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000071001 with GL_Num 110101001 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000081001: GL_Num = 110101001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000081001: Type = LIABILITY
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] WARN  c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 2 - Last Transaction]: Account 100000081001 has gap of 5 days. Previous day 2025-04-04 not found. Using last Closing_Bal from 2025-03-31 = 1223.69
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000081001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000081001: Liability account - CR_Summation = 0.59
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000081001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000081001: Regular DR=0, Regular CR=0.59, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000081001: Opening=1223.69, DR=0, CR=0.59, Closing=1224.28, Interest=0.59
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000081001 with GL_Num 110101001 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+Hibernate: 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000096001: GL_Num = 210201001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000096001: Type = ASSET
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 100000096001 found accrual record for 2025-04-04 with Closing_Bal = -592.97
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='D' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='D' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000096001: Asset account - DR_Summation = 7.53
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000096001: Asset account - CR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000096001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000096001: Regular DR=7.53, Regular CR=0, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000096001: Opening=-592.97, DR=7.53, CR=0, Closing=-600.50, Interest=-7.53
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000096001 with GL_Num 210201001 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+Hibernate: 
+    select
+        s1_0.sub_product_id,
+        s1_0.cum_gl_num,
+        s1_0.effective_interest_rate,
+        s1_0.entry_date,
+        s1_0.entry_time,
+        s1_0.ext_gl_num,
+        s1_0.interest_income_payable_gl_num,
+        s1_0.interest_increment,
+        s1_0.interest_receivable_expenditure_gl_num,
+        s1_0.intt_code,
+        s1_0.maker_id,
+        s1_0.product_id,
+        s1_0.sub_product_code,
+        s1_0.sub_product_name,
+        s1_0.sub_product_status,
+        s1_0.verification_date,
+        s1_0.verification_time,
+        s1_0.verifier_id 
+    from
+        sub_prod_master s1_0 
+    where
+        s1_0.sub_product_id=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000111001: GL_Num = 110101002
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000111001: Type = LIABILITY
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 100000111001 found accrual record for 2025-04-04 with Closing_Bal = 3147.28
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000111001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000111001: Liability account - CR_Summation = 246.29
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000111001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000111001: Regular DR=0, Regular CR=246.29, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000111001: Opening=3147.28, DR=0, CR=246.29, Closing=3393.57, Interest=246.29
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000111001 with GL_Num 110101002 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000121001: GL_Num = 110101001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000121001: Type = LIABILITY
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 100000121001 found accrual record for 2025-04-04 with Closing_Bal = 2071.72
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000121001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000121001: Liability account - CR_Summation = 3.47
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 100000121001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000121001: Regular DR=0, Regular CR=3.47, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 100000121001: Opening=2071.72, DR=0, CR=3.47, Closing=2075.19, Interest=3.47
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 100000121001 with GL_Num 110101001 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023001: GL_Num = 110201002
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023001: Type = LIABILITY
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 200000023001 found accrual record for 2025-04-04 with Closing_Bal = 12958.91
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023001: Liability account - DR_Summation set to 0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023001: Liability account - CR_Summation = 301.37
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 200000023001
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023001: Regular DR=0, Regular CR=301.37, Value Date Impact=0
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023001: Opening=12958.91, DR=0, CR=301.37, Closing=13260.28, Interest=301.37
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 200000023001 with GL_Num 110201002 and currency BDT
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0 
+    where
+        c1_0.account_no=?
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023002: GL_Num = 110201002
+2025-11-26 14:05:44 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023002: Type = LIABILITY
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date<? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - 3-Tier Fallback [Tier 1 - Previous Day]: Account 200000023002 found accrual record for 2025-04-04 with Closing_Bal = 539.19
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023002: Liability account - DR_Summation set to 0
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+Hibernate: 
+    select
+        coalesce(sum(i1_0.amount),0) 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.dr_cr_flag='C' 
+        and i1_0.original_dr_cr_flag is null
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023002: Liability account - CR_Summation = 12.35
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+Hibernate: 
+    select
+        i1_0.accr_tran_id,
+        i1_0.account_no,
+        i1_0.accrual_date,
+        i1_0.amount,
+        i1_0.dr_cr_flag,
+        i1_0.exchange_rate,
+        i1_0.fcy_amt,
+        i1_0.gl_account_no,
+        i1_0.interest_rate,
+        i1_0.lcy_amt,
+        i1_0.narration,
+        i1_0.original_dr_cr_flag,
+        i1_0.status,
+        i1_0.tran_ccy,
+        i1_0.tran_date,
+        i1_0.tran_status,
+        i1_0.udf1,
+        i1_0.value_date 
+    from
+        intt_accr_tran i1_0 
+    where
+        i1_0.account_no=? 
+        and i1_0.accrual_date=? 
+        and i1_0.original_dr_cr_flag is not null 
+        and i1_0.dr_cr_flag=i1_0.original_dr_cr_flag
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - No value date interest records found for account 200000023002
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023002: Regular DR=0, Regular CR=12.35, Value Date Impact=0
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Account 200000023002: Opening=539.19, DR=0, CR=12.35, Closing=551.54, Interest=12.35
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+Hibernate: 
+    select
+        a1_0.accr_bal_id,
+        a1_0.account_no,
+        a1_0.accrual_date,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.dr_summation,
+        a1_0.gl_num,
+        a1_0.interest_amount,
+        a1_0.opening_bal,
+        a1_0.tran_ccy,
+        a1_0.tran_date 
+    from
+        acct_bal_accrual a1_0 
+    where
+        a1_0.account_no=? 
+        and a1_0.tran_date=?
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.s.InterestAccrualAccountBalanceService [] - Created new accrual balance for account 200000023002 with GL_Num 110201002 and currency BDT
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+Hibernate: 
+    insert 
+    into
+        acct_bal_accrual
+        (account_no,accrual_date,closing_bal,cr_summation,dr_summation,gl_num,interest_amount,opening_bal,tran_ccy,tran_date) 
+    values
+        (?,?,?,?,?,?,?,?,?,?)
+2025-11-26 14:05:45 [http-nio-8082-exec-2] INFO  c.e.m.s.InterestAccrualAccountBalanceService [] - Batch Job 6 completed. Records processed: 10, Errors: 0
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+Hibernate: 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.service.SystemDateService [] - Retrieved System_Date from Parameter_Table: 2025-04-05
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG c.e.m.service.SystemDateService [] - Generated System_DateTime: 2025-04-05T14:05:45.339753700
+2025-11-26 14:05:45 [http-nio-8082-exec-2] DEBUG org.hibernate.SQL [] - 
+    update
+        eod_log_table 
+    set
+        created_timestamp=?,
+        end_timestamp=?,
+        eod_date=?,
+        error_message=?,
+        failed_at_step=?,
+        job_name=?,
+        records_processed=?,
+        start_timestamp=?,
+        status=?,
+        system_date=?,
+        user_id=? 
+    where
+        eod_log_id=?
+Hibernate: 
+    update
+        eod_log_table 
+    set
+        created_timestamp=?,
+        end_timestamp=?,
+        eod_date=?,
+        error_message=?,
+        failed_at_step=?,
+        job_name=?,
+        records_processed=?,
+        start_timestamp=?,
+        status=?,
+        system_date=?,
+        user_id=? 
+    where
+        eod_log_id=?
+2025-11-26 14:05:46 [http-nio-8082-exec-2] INFO  c.e.m.s.EODJobManagementService [] - Job 6 (Interest Accrual Account Balance Update) completed successfully. Records processed: 10
+2025-11-26 14:05:46 [http-nio-8082-exec-2] INFO  c.e.m.controller.EODJobController [] - Job 6 executed successfully: Job completed successfully
+2025-11-26 14:08:09 [http-nio-8082-exec-5] INFO  c.e.m.c.MultiCurrencyTransactionController [] - Manual EOD Revaluation triggered via API
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+Hibernate: 
+    select
+        p1_0.parameter_value 
+    from
+        parameter_table p1_0 
+    where
+        p1_0.parameter_name='System_Date'
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG c.e.m.service.SystemDateService [] - Retrieved System_Date from Parameter_Table: 2025-04-05
+2025-11-26 14:08:09 [http-nio-8082-exec-5] INFO  c.e.m.service.RevaluationService [] - Starting EOD revaluation for date: 2025-04-05
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+Hibernate: 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+2025-11-26 14:08:09 [http-nio-8082-exec-5] ERROR c.e.m.service.RevaluationService [] - Error revaluing GL account 220302001: query did not return a unique result: 6
+org.springframework.dao.IncorrectResultSizeDataAccessException: query did not return a unique result: 6
+	at org.springframework.orm.jpa.EntityManagerFactoryUtils.convertJpaAccessExceptionIfPossible(EntityManagerFactoryUtils.java:382)
+	at org.springframework.orm.jpa.vendor.HibernateJpaDialect.translateExceptionIfPossible(HibernateJpaDialect.java:234)
+	at org.springframework.orm.jpa.AbstractEntityManagerFactoryBean.translateExceptionIfPossible(AbstractEntityManagerFactoryBean.java:550)
+	at org.springframework.dao.support.ChainedPersistenceExceptionTranslator.translateExceptionIfPossible(ChainedPersistenceExceptionTranslator.java:61)
+	at org.springframework.dao.support.DataAccessUtils.translateIfNecessary(DataAccessUtils.java:243)
+	at org.springframework.dao.support.PersistenceExceptionTranslationInterceptor.invoke(PersistenceExceptionTranslationInterceptor.java:152)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.data.jpa.repository.support.CrudMethodMetadataPostProcessor$CrudMethodMetadataPopulatingMethodInterceptor.invoke(CrudMethodMetadataPostProcessor.java:135)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.interceptor.ExposeInvocationInterceptor.invoke(ExposeInvocationInterceptor.java:97)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.java:244)
+	at jdk.proxy2/jdk.proxy2.$Proxy161.findByGlNumWithLock(Unknown Source)
+	at com.example.moneymarket.service.RevaluationService.processGLRevaluation(RevaluationService.java:150)
+	at com.example.moneymarket.service.RevaluationService.performEodRevaluation(RevaluationService.java:90)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.aop.support.AopUtils.invokeJoinpointUsingReflection(AopUtils.java:343)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.invokeJoinpoint(ReflectiveMethodInvocation.java:196)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:751)
+	at org.springframework.transaction.interceptor.TransactionInterceptor$1.proceedWithInvocation(TransactionInterceptor.java:123)
+	at org.springframework.transaction.interceptor.TransactionAspectSupport.invokeWithinTransaction(TransactionAspectSupport.java:391)
+	at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:751)
+	at org.springframework.aop.framework.CglibAopProxy$DynamicAdvisedInterceptor.intercept(CglibAopProxy.java:703)
+	at com.example.moneymarket.service.RevaluationService$$SpringCGLIB$$0.performEodRevaluation(<generated>)
+	at com.example.moneymarket.controller.MultiCurrencyTransactionController.triggerEodRevaluation(MultiCurrencyTransactionController.java:38)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+	at org.springframework.web.method.support.InvocableHandlerMethod.invokeForRequest(InvocableHandlerMethod.java:150)
+	at org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod.invokeAndHandle(ServletInvocableHandlerMethod.java:118)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.invokeHandlerMethod(RequestMappingHandlerAdapter.java:884)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.handleInternal(RequestMappingHandlerAdapter.java:797)
+	at org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter.handle(AbstractHandlerMethodAdapter.java:87)
+	at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1081)
+	at org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:974)
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1011)
+	at org.springframework.web.servlet.FrameworkServlet.doPost(FrameworkServlet.java:914)
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:590)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:885)
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:658)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:205)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:149)
+	at org.apache.tomcat.websocket.server.WsFilter.doFilter(WsFilter.java:51)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:174)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:149)
+	at org.springframework.web.filter.CorsFilter.doFilterInternal(CorsFilter.java:91)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:174)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:149)
+	at org.springframework.web.filter.RequestContextFilter.doFilterInternal(RequestContextFilter.java:100)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:174)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:149)
+	at org.springframework.web.filter.FormContentFilter.doFilterInternal(FormContentFilter.java:93)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:174)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:149)
+	at org.springframework.web.filter.ServerHttpObservationFilter.doFilterInternal(ServerHttpObservationFilter.java:109)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:174)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:149)
+	at org.springframework.web.filter.CharacterEncodingFilter.doFilterInternal(CharacterEncodingFilter.java:201)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:174)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:149)
+	at org.apache.catalina.core.StandardWrapperValve.invoke(StandardWrapperValve.java:167)
+	at org.apache.catalina.core.StandardContextValve.invoke(StandardContextValve.java:90)
+	at org.apache.catalina.authenticator.AuthenticatorBase.invoke(AuthenticatorBase.java:482)
+	at org.apache.catalina.core.StandardHostValve.invoke(StandardHostValve.java:115)
+	at org.apache.catalina.valves.ErrorReportValve.invoke(ErrorReportValve.java:93)
+	at org.apache.catalina.core.StandardEngineValve.invoke(StandardEngineValve.java:74)
+	at org.apache.catalina.connector.CoyoteAdapter.service(CoyoteAdapter.java:340)
+	at org.apache.coyote.http11.Http11Processor.service(Http11Processor.java:391)
+	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:63)
+	at org.apache.coyote.AbstractProtocol$ConnectionHandler.process(AbstractProtocol.java:896)
+	at org.apache.tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1744)
+	at org.apache.tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1191)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:659)
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:61)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: jakarta.persistence.NonUniqueResultException: query did not return a unique result: 6
+	at org.hibernate.internal.ExceptionConverterImpl.convert(ExceptionConverterImpl.java:128)
+	at org.hibernate.query.spi.AbstractSelectionQuery.getSingleResult(AbstractSelectionQuery.java:482)
+	at org.springframework.data.jpa.repository.query.JpaQueryExecution$SingleEntityExecution.doExecute(JpaQueryExecution.java:223)
+	at org.springframework.data.jpa.repository.query.JpaQueryExecution.execute(JpaQueryExecution.java:92)
+	at org.springframework.data.jpa.repository.query.AbstractJpaQuery.doExecute(AbstractJpaQuery.java:149)
+	at org.springframework.data.jpa.repository.query.AbstractJpaQuery.execute(AbstractJpaQuery.java:137)
+	at org.springframework.data.repository.core.support.RepositoryMethodInvoker.doInvoke(RepositoryMethodInvoker.java:136)
+	at org.springframework.data.repository.core.support.RepositoryMethodInvoker.invoke(RepositoryMethodInvoker.java:120)
+	at org.springframework.data.repository.core.support.QueryExecutorMethodInterceptor.doInvoke(QueryExecutorMethodInterceptor.java:164)
+	at org.springframework.data.repository.core.support.QueryExecutorMethodInterceptor.invoke(QueryExecutorMethodInterceptor.java:143)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.data.projection.DefaultMethodInvokingMethodInterceptor.invoke(DefaultMethodInvokingMethodInterceptor.java:72)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.transaction.interceptor.TransactionInterceptor$1.proceedWithInvocation(TransactionInterceptor.java:123)
+	at org.springframework.transaction.interceptor.TransactionAspectSupport.invokeWithinTransaction(TransactionAspectSupport.java:391)
+	at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.dao.support.PersistenceExceptionTranslationInterceptor.invoke(PersistenceExceptionTranslationInterceptor.java:137)
+	... 79 common frames omitted
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+Hibernate: 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG c.e.m.service.RevaluationService [] - No GL balance found for 220303001, skipping revaluation
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+Hibernate: 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG c.e.m.service.RevaluationService [] - No GL balance found for 220304001, skipping revaluation
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+Hibernate: 
+    select
+        g1_0.id,
+        g1_0.closing_bal,
+        g1_0.cr_summation,
+        g1_0.current_balance,
+        g1_0.dr_summation,
+        g1_0.gl_num,
+        g1_0.last_updated,
+        g1_0.opening_bal,
+        g1_0.tran_date 
+    from
+        gl_balance g1_0 
+    where
+        g1_0.gl_num=? 
+    order by
+        g1_0.tran_date desc for update
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG c.e.m.service.RevaluationService [] - No GL balance found for 220305001, skipping revaluation
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0
+Hibernate: 
+    select
+        c1_0.account_no,
+        c1_0.account_ccy,
+        c1_0.account_status,
+        c1_0.acct_name,
+        c1_0.branch_code,
+        c1_0.cust_name,
+        c1_0.cust_id,
+        c1_0.date_closure,
+        c1_0.date_maturity,
+        c1_0.date_opening,
+        c1_0.gl_num,
+        c1_0.loan_limit,
+        c1_0.sub_product_id,
+        c1_0.tenor 
+    from
+        cust_acct_master c1_0
+2025-11-26 14:08:09 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        f1_0.rate_id,
+        f1_0.buying_rate,
+        f1_0.ccy_pair,
+        f1_0.created_at,
+        f1_0.last_updated,
+        f1_0.mid_rate,
+        f1_0.rate_date,
+        f1_0.selling_rate,
+        f1_0.source,
+        f1_0.uploaded_by 
+    from
+        fx_rate_master f1_0 
+    where
+        f1_0.ccy_pair=? 
+    order by
+        f1_0.rate_date desc 
+    limit
+        ?
+Hibernate: 
+    select
+        f1_0.rate_id,
+        f1_0.buying_rate,
+        f1_0.ccy_pair,
+        f1_0.created_at,
+        f1_0.last_updated,
+        f1_0.mid_rate,
+        f1_0.rate_date,
+        f1_0.selling_rate,
+        f1_0.source,
+        f1_0.uploaded_by 
+    from
+        fx_rate_master f1_0 
+    where
+        f1_0.ccy_pair=? 
+    order by
+        f1_0.rate_date desc 
+    limit
+        ?
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG c.e.m.service.RevaluationService [] - No revaluation difference for account 100000008001, skipping
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG c.e.m.service.RevaluationService [] - Account 1000000099001 has zero balance, skipping revaluation
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG c.e.m.service.RevaluationService [] - Account 1000000099002 has zero balance, skipping revaluation
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG org.hibernate.SQL [] - 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+Hibernate: 
+    select
+        a1_0.account_no,
+        a1_0.tran_date,
+        a1_0.account_ccy,
+        a1_0.available_balance,
+        a1_0.closing_bal,
+        a1_0.cr_summation,
+        a1_0.current_balance,
+        a1_0.dr_summation,
+        a1_0.last_updated,
+        a1_0.opening_bal 
+    from
+        acct_bal a1_0 
+    where
+        a1_0.account_no=? 
+    order by
+        a1_0.tran_date desc
+2025-11-26 14:08:10 [http-nio-8082-exec-5] DEBUG c.e.m.service.RevaluationService [] - Account 1000000099003 has zero balance, skipping revaluation
+2025-11-26 14:08:10 [http-nio-8082-exec-5] INFO  c.e.m.service.RevaluationService [] - EOD revaluation completed: 0 entries, Total Gain: 0, Total Loss: 0
