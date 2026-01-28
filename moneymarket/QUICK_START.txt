@@ -1,0 +1,185 @@
+================================================================================
+  MONEY MARKET CBS - QUICK START GUIDE
+================================================================================
+
+COMPILATION ERRORS: FIXED ✅
+All 3 compilation errors have been resolved. Application is ready to run!
+
+================================================================================
+  OPTION 1: QUICK START (RECOMMENDED)
+================================================================================
+
+Open Command Prompt (cmd.exe) and run:
+
+    cd C:\new_cbs3\cbs3\moneymarket
+    start-app.bat
+
+This will:
+- Check Java and Maven installation
+- Start Spring Boot application
+- Use MySQL database (port 3306)
+- Run on http://localhost:8082
+
+================================================================================
+  OPTION 2: QUICK START WITH H2 (NO MYSQL NEEDED)
+================================================================================
+
+If MySQL is not running or you want to test without it:
+
+    cd C:\new_cbs3\cbs3\moneymarket
+    start-app-h2.bat
+
+This will:
+- Use H2 in-memory database (no MySQL required)
+- Create application-h2.properties automatically
+- Run on http://localhost:8082
+- Access H2 Console at http://localhost:8082/h2-console
+
+================================================================================
+  OPTION 3: MANUAL START
+================================================================================
+
+Command Prompt (cmd.exe):
+
+    cd C:\new_cbs3\cbs3\moneymarket
+    mvn spring-boot:run -DskipTests
+
+PowerShell:
+
+    cd C:\new_cbs3\cbs3\moneymarket
+    mvn spring-boot:run -DskipTests
+
+================================================================================
+  OPTION 4: BUILD JAR AND RUN
+================================================================================
+
+Build once:
+
+    cd C:\new_cbs3\cbs3\moneymarket
+    mvn clean package -DskipTests
+
+Run the JAR:
+
+    java -jar target\moneymarket-0.0.1-SNAPSHOT.jar
+
+================================================================================
+  OPTION 5: USE IDE
+================================================================================
+
+IntelliJ IDEA:
+1. File → Open → Select moneymarket folder
+2. Wait for Maven import
+3. Right-click MoneyMarketApplication.java
+4. Click "Run 'MoneyMarketApplication'"
+
+VS Code:
+1. Open moneymarket folder
+2. Install "Spring Boot Extension Pack"
+3. Press F5 to run
+
+Eclipse:
+1. File → Import → Existing Maven Projects
+2. Select moneymarket folder
+3. Right-click MoneyMarketApplication.java
+4. Run As → Spring Boot App
+
+================================================================================
+  VERIFY APPLICATION STARTED
+================================================================================
+
+You should see this in the console:
+
+    Started MoneyMarketApplication in X.XXX seconds
+
+Then verify these URLs in your browser:
+
+✅ Health Check:    http://localhost:8082/actuator/health
+✅ API Docs:        http://localhost:8082/swagger-ui.html
+✅ Application:     http://localhost:8082
+
+Expected health check response:
+    {"status":"UP"}
+
+================================================================================
+  TEST INTEREST CAPITALIZATION
+================================================================================
+
+1. Start the backend (one of the options above)
+
+2. Start the frontend in a NEW terminal:
+    cd C:\new_cbs3\cbs3\frontend
+    npm install
+    npm run dev
+
+3. Open browser: http://localhost:5173
+
+4. Navigate to "Interest Capitalization" in the left sidebar
+
+5. Use search filters to find interest-bearing accounts
+
+6. Select an account and click "Proceed Interest"
+
+================================================================================
+  TROUBLESHOOTING
+================================================================================
+
+ERROR: "Port 8082 is already in use"
+FIX: 
+    netstat -ano | findstr :8082
+    taskkill /PID <process_id> /F
+
+ERROR: "Cannot connect to database"
+FIX (Option 1 - Start MySQL):
+    net start MySQL80
+
+FIX (Option 2 - Use H2 instead):
+    cd C:\new_cbs3\cbs3\moneymarket
+    start-app-h2.bat
+
+ERROR: "Maven not found"
+FIX: Install Maven or use IDE (Option 5)
+
+ERROR: "Java not found"  
+FIX: Install Java 17 or higher
+
+ERROR: Still having issues?
+SEE: RUN_APPLICATION.md for detailed troubleshooting
+
+================================================================================
+  PORTS USED
+================================================================================
+
+Backend API:     8082
+Frontend UI:     5173 (Vite dev server)
+MySQL Database:  3306
+H2 Console:      8082/h2-console (when using H2 mode)
+
+================================================================================
+  FEATURES AVAILABLE
+================================================================================
+
+✅ Customer Management
+✅ Product & Sub-Product Management  
+✅ Account Management (Customer & Office)
+✅ Transaction Processing
+✅ Interest Capitalization (NEW!)
+✅ Interest Accrual (EOD)
+✅ Exchange Rate Management
+✅ Statement of Accounts
+✅ Settlement Reports
+✅ BOD/EOD Processing
+✅ System Date Management
+
+================================================================================
+  NEED HELP?
+================================================================================
+
+📖 Implementation Guide:  INTEREST_CAPITALIZATION_IMPLEMENTATION.md
+📖 User Guide:           INTEREST_CAPITALIZATION_README.md
+📖 Troubleshooting:      RUN_APPLICATION.md
+📖 Compilation Fixes:    COMPILATION_FIXES.md
+📖 Final Summary:        FINAL_SUMMARY.md
+
+================================================================================
+
+Ready to start! Run one of the startup options above. 🚀

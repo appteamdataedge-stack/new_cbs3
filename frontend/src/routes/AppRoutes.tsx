@@ -17,6 +17,7 @@ import OfficeAccountForm from '../pages/officeaccounts/OfficeAccountForm';
 import OfficeAccountDetails from '../pages/officeaccounts/OfficeAccountDetails';
 import TransactionList from '../pages/transactions/TransactionList';
 import TransactionForm from '../pages/transactions/TransactionForm';
+import { InterestCapitalizationList, InterestCapitalizationDetails } from '../pages/interestCapitalization';
 import ExchangeRateManagement from '../pages/exchange-rates/ExchangeRateManagement';
 import StatementOfAccounts from '../pages/StatementOfAccounts';
 import SettlementReports from '../pages/SettlementReports';
@@ -115,6 +116,10 @@ const AppRoutes = () => {
         <Route path="/transactions" element={<TransactionList />} />
         <Route path="/transactions/new" element={<TransactionForm />} />
         <Route path="/transactions/:tranId" element={<TransactionList />} />
+
+        {/* Interest Capitalization */}
+        <Route path="/interest-capitalization" element={<InterestCapitalizationList />} />
+        <Route path="/interest-capitalization/:accountNo" element={<InterestCapitalizationDetails />} />
 
         {/* Exchange Rate Management */}
         <Route path="/exchange-rates" element={<ExchangeRateManagement />} />

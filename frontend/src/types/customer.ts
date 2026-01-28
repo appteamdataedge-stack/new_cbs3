@@ -30,6 +30,7 @@ export interface CustomerResponseDTO {
   firstName?: string;
   lastName?: string;
   tradeName?: string;
+  custName?: string; // Computed name (firstName + lastName for Individual, tradeName for Corporate/Bank)
   address1?: string;
   mobile?: string;
   makerId: string;

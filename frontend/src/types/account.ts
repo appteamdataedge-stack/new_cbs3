@@ -74,6 +74,9 @@ export interface CustomerAccountResponseDTO {
   computedBalance?: number;         // Real-time computed balance (Prev Day + Credits - Debits)
   interestAccrued?: number;         // Latest closing balance from acct_bal_accrual
   loanLimit?: number;               // Loan/Limit Amount for Asset-side accounts (GL starting with "2")
+  lastInterestPaymentDate?: string; // Date when interest was last capitalized
+  interestBearing?: boolean;        // Whether the account's product is interest-bearing
+  productName?: string;             // Product name
   message?: string; // Optional message from API
 }
 

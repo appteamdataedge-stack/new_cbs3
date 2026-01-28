@@ -33,6 +33,9 @@ public class CustomerAccountResponseDTO {
     private BigDecimal computedBalance;     // Real-time computed balance (Prev Day + Credits - Debits)
     private BigDecimal interestAccrued;     // Latest closing balance from acct_bal_accrual
     private BigDecimal loanLimit;           // Loan/Limit Amount for Asset-side accounts (GL starting with "2")
+    private LocalDate lastInterestPaymentDate;  // Date when interest was last capitalized
+    private Boolean interestBearing;        // Whether the account's product is interest-bearing
+    private String productName;             // Product name
     
     // Message for UI display (e.g., confirmation messages)
     private String message;

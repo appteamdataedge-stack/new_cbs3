@@ -137,4 +137,14 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
      * @return List of transactions with matching prefix
      */
     List<TranTable> findByTranIdStartingWith(String tranIdPrefix);
+
+    /**
+     * Count transactions by date and transaction ID prefix
+     * Used for generating capitalization transaction IDs (C prefix)
+     *
+     * @param tranDate The transaction date
+     * @param tranIdPrefix The transaction ID prefix (e.g., "C" for capitalization)
+     * @return Count of transactions matching the criteria
+     */
+    long countByTranDateAndTranIdStartingWith(LocalDate tranDate, String tranIdPrefix);
 }

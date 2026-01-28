@@ -31,6 +31,9 @@ public interface AcctBalRepository extends JpaRepository<AcctBal, AcctBalId> {
     @Query("SELECT ab FROM AcctBal ab WHERE ab.tranDate = ?1")
     List<AcctBal> findByTranDate(LocalDate tranDate);
     
+    @Query("SELECT ab FROM AcctBal ab WHERE ab.tranDate = ?1 AND ab.accountNo = ?2")
+    Optional<AcctBal> findByTranDateAndAccountAccountNo(LocalDate tranDate, String accountNo);
+    
     // Get the latest balance record for an account (for current balance)
     default Optional<AcctBal> findLatestByAccountNo(String accountNo) {
         List<AcctBal> balances = findByAccountNoOrderByTranDateDesc(accountNo);

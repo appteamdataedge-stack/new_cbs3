@@ -65,6 +65,9 @@ public class CustAcctMaster {
     @Builder.Default
     private BigDecimal loanLimit = BigDecimal.ZERO;
 
+    @Column(name = "Last_Interest_Payment_Date")
+    private LocalDate lastInterestPaymentDate;
+
 
     public enum AccountStatus {
         Active, Inactive, Closed, Dormant

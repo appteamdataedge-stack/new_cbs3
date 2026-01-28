@@ -40,16 +40,22 @@ const PageHeader = ({
     
     let currentPath = '';
     
-    paths.forEach((path) => {
+    paths.forEach((path, index) => {
       currentPath += `/${path}`;
       // Format the path name to be more readable
       let name = path.charAt(0).toUpperCase() + path.slice(1);
       
-      // Handle numeric IDs or special cases
+      // Handle special cases
       if (path === 'new') {
         name = 'New';
+      } else if (path === 'interest-capitalization') {
+        name = 'Interest Capitalization';
       } else if (!isNaN(Number(path)) || path.length > 20) {
-        name = 'Details';
+        // Only convert to 'Details' if it's the last path segment (an ID)
+        // Otherwise keep the previous segment name
+        if (index === paths.length - 1) {
+          name = 'Details';
+        }
       }
       
       breadcrumbItems.push({

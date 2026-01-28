@@ -56,6 +56,7 @@ com\example\moneymarket\service\SettlementReportService$DailySettlementReport.cl
 com\example\moneymarket\service\ExchangeRateService$ExchangeRateInfo.class
 com\example\moneymarket\service\GLHierarchyService.class
 com\example\moneymarket\service\AccountService.class
+com\example\moneymarket\dto\InterestCapitalizationResponseDTO$InterestCapitalizationResponseDTOBuilder.class
 com\example\moneymarket\service\GLSetupService.class
 com\example\moneymarket\dto\SubProductRequestDTO.class
 com\example\moneymarket\dto\CreateExchangeRateRequest.class
@@ -97,6 +98,7 @@ com\example\moneymarket\service\SettlementReportService$TopSettlementsReport$Top
 com\example\moneymarket\service\EODJobManagementService.class
 com\example\moneymarket\repository\ParameterTableRepository.class
 com\example\moneymarket\service\EODOrchestrationService.class
+com\example\moneymarket\dto\InterestCapitalizationRequestDTO.class
 com\example\moneymarket\entity\SubProdMaster$SubProdMasterBuilder.class
 com\example\moneymarket\controller\CustomerController.class
 com\example\moneymarket\config\CorsConfig.class
@@ -110,6 +112,7 @@ com\example\moneymarket\repository\WaeMasterRepository.class
 com\example\moneymarket\service\EODReportingService.class
 com\example\moneymarket\repository\ValueDateInttAccrRepository.class
 com\example\moneymarket\validation\VerificationValidator.class
+com\example\moneymarket\dto\InterestCapitalizationRequestDTO$InterestCapitalizationRequestDTOBuilder.class
 com\example\moneymarket\validation\CustomerValidator.class
 com\example\moneymarket\service\AccountNumberService.class
 com\example\moneymarket\controller\OfficeAccountController.class
@@ -126,6 +129,7 @@ com\example\moneymarket\service\InterestRateService.class
 com\example\moneymarket\dto\CreateExchangeRateRequest$CreateExchangeRateRequestBuilder.class
 com\example\moneymarket\service\SubProductService.class
 com\example\moneymarket\service\BalanceService.class
+com\example\moneymarket\controller\InterestCapitalizationController.class
 com\example\moneymarket\dto\TransactionLineDTO.class
 com\example\moneymarket\service\RevaluationService$RevaluationEntry$RevaluationEntryBuilder.class
 com\example\moneymarket\dto\AccountOptionDTO.class
@@ -183,6 +187,7 @@ com\example\moneymarket\service\UnifiedAccountService.class
 com\example\moneymarket\service\CustomerIdService$1.class
 com\example\moneymarket\repository\AcctBalAccrualRepository.class
 com\example\moneymarket\dto\MultiCurrencyTransactionRequest.class
+com\example\moneymarket\service\InterestCapitalizationService.class
 com\example\moneymarket\validation\CustomerAccountValidator.class
 com\example\moneymarket\service\EODJobManagementService$EODJobResult.class
 com\example\moneymarket\dto\ProductResponseDTO.class
@@ -197,6 +202,7 @@ com\example\moneymarket\service\ValueDateInterestService.class
 com\example\moneymarket\controller\InterestRateController.class
 com\example\moneymarket\dto\CustomerRequestDTO$CustomerRequestDTOBuilder.class
 com\example\moneymarket\dto\OfficeAccountResponseDTO.class
+com\example\moneymarket\dto\InterestCapitalizationResponseDTO.class
 com\example\moneymarket\entity\TranTable$TranStatus.class
 com\example\moneymarket\controller\EODController$ProcessResponse.class
 com\example\moneymarket\entity\FxRateMaster.class

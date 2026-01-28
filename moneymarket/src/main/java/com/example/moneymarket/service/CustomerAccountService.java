@@ -298,6 +298,9 @@ public class CustomerAccountService {
                 .computedBalance(balanceDTO.getComputedBalance())  // Real-time balance
                 .interestAccrued(balanceDTO.getInterestAccrued())  // From acct_bal_accrual
                 .loanLimit(entity.getLoanLimit())  // Loan/Limit Amount for Asset accounts
+                .lastInterestPaymentDate(entity.getLastInterestPaymentDate())  // Last interest capitalization date
+                .interestBearing(entity.getSubProduct().getProduct().getInterestBearingFlag())  // Interest bearing flag
+                .productName(entity.getSubProduct().getProduct().getProductName())  // Product name
                 .build();
     }
 

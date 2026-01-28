@@ -30,6 +30,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import DescriptionIcon from '@mui/icons-material/Description';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AccountCircle from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -59,6 +60,7 @@ const Sidebar = ({ open, onToggle }: SidebarProps) => {
     { name: 'Accounts', path: '/accounts', icon: <AccountBalanceIcon /> },
     { name: 'Office Accounts', path: '/office-accounts', icon: <BusinessIcon /> },
     { name: 'Transactions', path: '/transactions', icon: <PaymentIcon /> },
+    { name: 'Interest Capitalization', path: '/interest-capitalization', icon: <AccountBalanceWalletIcon /> },
     { name: 'Exchange Rates', path: '/exchange-rates', icon: <CurrencyExchangeIcon /> },
     { name: 'Statement of Accounts', path: '/statement-of-accounts', icon: <DescriptionIcon /> },
     { name: 'Settlement Reports', path: '/settlement-reports', icon: <AssessmentIcon /> },
