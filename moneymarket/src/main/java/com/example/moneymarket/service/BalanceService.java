@@ -278,6 +278,7 @@ public class BalanceService {
                 .accountNo(accountNo)
                 .accountName(accountName)
                 .accountCcy(accountCcy)  // Account currency (BDT, USD, EUR, etc.)
+                .previousDayOpeningBalance(previousDayOpeningBalance)  // Static previous day closing balance (does not change during the day)
                 .availableBalance(availableBalance)  // Updated to use calculated available balance (includes loan limit for Asset accounts)
                 .currentBalance(currentDayBalance.getCurrentBalance())
                 .todayDebits(dateDebits)

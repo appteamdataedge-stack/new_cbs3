@@ -164,6 +164,24 @@ const TransactionForm = () => {
     }
   }, [systemDate, isLoadingSystemDate, setValue]);
 
+  // Helper function to get previous day opening balance (static value)
+  const getPreviousDayOpeningBalance = (balance: AccountBalanceDTO | undefined): number => {
+    if (!balance) return 0;
+    
+    // Use the backend field if available
+    if (balance.previousDayOpeningBalance !== undefined) {
+      return balance.previousDayOpeningBalance;
+    }
+    
+    // Fallback: Calculate from computedBalance
+    // previousDayOpeningBalance = computedBalance - todayCredits + todayDebits
+    if (balance.computedBalance !== undefined) {
+      return balance.computedBalance - (balance.todayCredits || 0) + (balance.todayDebits || 0);
+    }
+    
+    return 0;
+  };
+
   // Fetch account balance and overdraft status when account is selected
   const fetchAccountBalance = async (accountNo: string, index: number) => {
     if (!accountNo) return;
@@ -201,7 +219,17 @@ const TransactionForm = () => {
   const createTransactionMutation = useMutation({
     mutationFn: createTransaction,
     onSuccess: (data) => {
+      // Invalidate transaction queries
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      
+      // Invalidate account queries for all accounts involved in the transaction
+      // This ensures Account Details page and Account List show fresh balance data
+      data.lines.forEach(line => {
+        queryClient.invalidateQueries({ queryKey: ['account', line.accountNo] });
+        queryClient.invalidateQueries({ queryKey: ['customerAccounts'] });
+        queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Invalidate accounts list
+      });
+      
       toast.success(`Transaction created successfully with status: ${data.status}. Transaction ID: ${data.tranId}`);
       toast.info('Transaction is in Entry status. It needs to be Posted by a Checker to update balances.');
       navigate('/transactions');
@@ -593,7 +621,7 @@ const TransactionForm = () => {
                     label="Available Balance"
                     type="text"
                     fullWidth
-                    value={accountBalances.get(`${index}`)?.computedBalance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                    value={accountBalances.get(`${index}`)?.availableBalance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                     InputProps={{
                       readOnly: true,
                       startAdornment: (
@@ -611,7 +639,9 @@ const TransactionForm = () => {
                     helperText={
                       accountOverdraftStatus.get(`${index}`)
                         ? "💳 Overdraft account - negative balance allowed"
-                        : `Previous Day Opening: ${accountBalances.get(`${index}`)?.availableBalance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} ${accountBalances.get(`${index}`)?.accountCcy || 'BDT'}`
+                        : assetAccounts.get(`${index}`)
+                        ? "💼 Asset Account - Balance + Loan Limit - Utilized Amount"
+                        : `Previous Day Opening: ${getPreviousDayOpeningBalance(accountBalances.get(`${index}`)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${accountBalances.get(`${index}`)?.accountCcy || 'BDT'}`
                     }
                     sx={{
                       '& .MuiInputBase-root': {
@@ -641,7 +671,7 @@ const TransactionForm = () => {
                           Previous Day Opening Balance:
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                          {accountBalances.get(`${index}`)?.availableBalance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} {accountBalances.get(`${index}`)?.accountCcy || 'BDT'}
+                          {getPreviousDayOpeningBalance(accountBalances.get(`${index}`)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {accountBalances.get(`${index}`)?.accountCcy || 'BDT'}
                         </Typography>
                       </Box>
                       <Box display="flex" justifyContent="space-between" alignItems="center">
@@ -665,7 +695,7 @@ const TransactionForm = () => {
                           Available Balance:
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                          {accountBalances.get(`${index}`)?.computedBalance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} {accountBalances.get(`${index}`)?.accountCcy || 'BDT'}
+                          {accountBalances.get(`${index}`)?.availableBalance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} {accountBalances.get(`${index}`)?.accountCcy || 'BDT'}
                         </Typography>
                       </Box>
                     </Box>

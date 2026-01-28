@@ -19,7 +19,8 @@ public class AccountBalanceDTO {
     private String accountNo;
     private String accountName;
     private String accountCcy;           // Account currency (BDT, USD, EUR, etc.)
-    private BigDecimal availableBalance; // Previous day opening balance (in account's currency)
+    private BigDecimal previousDayOpeningBalance; // Previous day's closing balance (static, does not change during the day)
+    private BigDecimal availableBalance; // Available balance (includes loan limit for Asset accounts, may include today's transactions)
     private BigDecimal currentBalance;   // Current day balance from acct_bal (in account's currency)
     private BigDecimal todayDebits;      // Current day debit transactions (in account's currency)
     private BigDecimal todayCredits;     // Current day credit transactions (in account's currency)

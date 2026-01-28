@@ -62,7 +62,8 @@ export interface AccountBalanceDTO {
   accountNo: string;
   accountName: string;
   accountCcy: string;        // Account currency
-  availableBalance: number;  // Previous day opening balance
+  previousDayOpeningBalance?: number;  // Previous day's closing balance (static, does not change during the day)
+  availableBalance: number;  // Available balance (includes loan limit for Asset accounts, may include today's transactions)
   currentBalance: number;    // Current day balance from acct_bal
   todayDebits: number;       // Current day debit transactions
   todayCredits: number;      // Current day credit transactions

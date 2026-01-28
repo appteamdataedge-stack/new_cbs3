@@ -29,7 +29,7 @@ const AccountDetails = () => {
   const queryClient = useQueryClient();
   const [closeConfirmDialog, setCloseConfirmDialog] = useState(false);
 
-  // Fetch account details
+  // Fetch account details - force refetch on mount to get fresh data
   const { 
     data: account, 
     isLoading, 
@@ -39,6 +39,9 @@ const AccountDetails = () => {
     queryKey: ['account', accountNo],
     queryFn: () => getCustomerAccountByAccountNo(accountNo || ''),
     enabled: !!accountNo,
+    refetchOnMount: true, // Force refetch when component mounts
+    refetchOnWindowFocus: false, // Don't refetch on window focus to avoid unnecessary calls
+    staleTime: 0, // Consider data stale immediately to ensure fresh fetch
   });
 
   // Close account mutation

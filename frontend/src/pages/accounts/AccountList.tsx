@@ -30,7 +30,10 @@ const AccountList = () => {
     queryKey: ['accounts', 'all'],
     queryFn: () => getAllCustomerAccounts(0, 1000), // Get a large number to effectively get all
     retry: 3,
-    retryDelay: 1000
+    retryDelay: 1000,
+    refetchOnMount: true, // Force refetch when component mounts to get fresh balance data
+    refetchOnWindowFocus: false, // Don't refetch on window focus to avoid unnecessary calls
+    staleTime: 0, // Consider data stale immediately to ensure fresh fetch
   });
   
   // Filter accounts based on search term
@@ -133,14 +136,24 @@ const AccountList = () => {
       label: 'Current Balance', 
       minWidth: 120,
       align: 'right',
-      format: (value: number | null | undefined) => (value !== null && value !== undefined) ? `${value.toLocaleString()}` : 'N/A'
+      format: (value: number | null | undefined, row: CustomerAccountResponseDTO) => {
+        // Use computedBalance (real-time) if available, otherwise fallback to currentBalance
+        // This matches the logic in AccountDetails component
+        const balance = row.computedBalance ?? row.currentBalance ?? 0;
+        return balance !== null && balance !== undefined ? `${balance.toLocaleString()}` : 'N/A';
+      }
     },
     { 
       id: 'availableBalance', 
       label: 'Available Balance', 
       minWidth: 120,
       align: 'right',
-      format: (value: number | null | undefined) => (value !== null && value !== undefined) ? `${value.toLocaleString()}` : 'N/A'
+      format: (value: number | null | undefined, row: CustomerAccountResponseDTO) => {
+        // availableBalance already includes loan limit for Asset accounts (GL starting with "2")
+        // This matches the logic in AccountDetails component
+        const balance = value ?? 0;
+        return balance !== null && balance !== undefined ? `${balance.toLocaleString()}` : 'N/A';
+      }
     },
     { 
       id: 'accountStatus', 

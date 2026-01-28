@@ -23,11 +23,11 @@ import {
   TextField,
   InputAdornment
 } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { getAllTransactions, getTransactionById, verifyTransaction } from '../../api/transactionService';
+import { getAllTransactions, getTransactionById, verifyTransaction, postTransaction } from '../../api/transactionService';
 import { DataTable, PageHeader, StatusBadge, VerificationModal } from '../../components/common';
 import type { Column } from '../../components/common';
 import type { TransactionLineResponseDTO, TransactionResponseDTO } from '../../types';
@@ -35,6 +35,7 @@ import { DrCrFlag } from '../../types';
 
 const TransactionList = () => {
   const { tranId } = useParams<{ tranId: string }>();
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
@@ -295,14 +296,48 @@ const TransactionList = () => {
     });
   };
 
+  // Handle transaction posting (Entry → Posted)
+  const handlePost = async (tranId: string) => {
+    try {
+      const result = await postTransaction(tranId);
+      
+      // Invalidate transaction queries
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      
+      // Invalidate account queries for all accounts involved in the transaction
+      // This ensures Account Details page and Account List show fresh balance data after posting
+      result.lines.forEach(line => {
+        queryClient.invalidateQueries({ queryKey: ['account', line.accountNo] });
+        queryClient.invalidateQueries({ queryKey: ['customerAccounts'] });
+        queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Invalidate accounts list
+      });
+      
+      toast.success('Transaction posted successfully. Balances have been updated.');
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to post transaction');
+    }
+  };
+
   // Handle transaction verification
   const handleVerify = async (_verifierId: string) => {
     if (!verificationModal.tranId) return;
 
     try {
-      await verifyTransaction(verificationModal.tranId);
+      const result = await verifyTransaction(verificationModal.tranId);
+      
+      // Invalidate transaction queries
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      
+      // Invalidate account queries for all accounts involved in the transaction
+      // This ensures Account Details page and Account List show fresh balance data after verification
+      result.lines.forEach(line => {
+        queryClient.invalidateQueries({ queryKey: ['account', line.accountNo] });
+        queryClient.invalidateQueries({ queryKey: ['customerAccounts'] });
+        queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Invalidate accounts list
+      });
+      
       toast.success('Transaction verified successfully');
-      // Refetch transactions to update the status
       refetch();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to verify transaction');
