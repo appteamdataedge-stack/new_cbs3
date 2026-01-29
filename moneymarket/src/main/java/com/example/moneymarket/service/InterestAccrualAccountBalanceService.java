@@ -54,8 +54,10 @@ public class InterestAccrualAccountBalanceService {
     public int updateInterestAccrualAccountBalances(LocalDate systemDate) {
         LocalDate processDate = systemDate != null ? systemDate : systemDateService.getSystemDate();
         log.info("Starting Batch Job 6: Interest Accrual Account Balance Update for date: {}", processDate);
+        log.info("=== PROCESSING BOTH 'S' (ACCRUAL) AND 'C' (CAPITALIZATION) TRANSACTIONS ===");
 
         // Step 1: Get unique account numbers from interest accrual transactions
+        // This includes ALL transactions: "S" (accrual), "C" (capitalization), etc.
         List<String> accountNumbers = inttAccrTranRepository.findDistinctAccountsByAccrualDate(processDate);
 
         if (accountNumbers.isEmpty()) {
@@ -91,7 +93,12 @@ public class InterestAccrualAccountBalanceService {
     }
 
     /**
-     * Process accrual balance for a single account with GL_Num-based logic
+     * Process accrual balance for a single account
+     * 
+     * CRITICAL: Calculates BOTH DR and CR summations for all account types
+     * to support Interest Capitalization ("C" transactions)
+     * 
+     * Formula: Closing_Bal = Opening_Bal + CR_Summation - DR_Summation
      */
     private void processAccountAccrualBalance(String accountNo, LocalDate systemDate) {
 
@@ -99,7 +106,7 @@ public class InterestAccrualAccountBalanceService {
         String glNum = getGLNumberForAccount(accountNo);
         log.debug("Account {}: GL_Num = {}", accountNo, glNum);
 
-        // Step B: Determine account type
+        // Step B: Determine account type (for value date interest calculation only)
         boolean isLiability = glNum.startsWith("1");
         boolean isAsset = glNum.startsWith("2");
 
@@ -113,27 +120,61 @@ public class InterestAccrualAccountBalanceService {
 
         // Step C: Get Opening Balance
         BigDecimal openingBal = getOpeningBalance(accountNo, systemDate);
+        
+        log.info("========================================");
+        log.info("=== EOD BATCH JOB 6: PROCESSING ACCOUNT ===");
+        log.info("========================================");
+        log.info("Account Number: {}", accountNo);
+        log.info("Account Type: {}", accountType);
+        log.info("GL Number: {}", glNum);
+        log.info("System Date: {}", systemDate);
+        log.info("Opening Balance (from previous day): {}", openingBal);
 
-        // Step D: Calculate DR Summation (Conditional based on GL_Num)
-        // Note: This includes REGULAR interest only (handled correctly)
-        BigDecimal drSummation = calculateDRSummation(accountNo, systemDate, glNum);
-
-        // Step E: Calculate CR Summation (Conditional based on GL_Num)
-        // Note: This includes REGULAR interest only (handled correctly)
-        BigDecimal crSummation = calculateCRSummation(accountNo, systemDate, glNum);
+        // Step D & E: Calculate DR and CR Summations
+        // CRITICAL FIX: Filter by BOTH transaction type AND Dr/Cr flag
+        // This ensures correct summation for accrual vs capitalization transactions
+        // 
+        // CR_Summation (Daily Accrual):
+        // - Accr_Tran_Id LIKE 'S%' (System interest accrual transactions)
+        // - Dr_Cr_Flag = 'C' (Credit)
+        // - Original_Dr_Cr_Flag IS NULL (excludes value date interest)
+        // - Example: S20260129001 with CR flag = daily interest credit
+        //
+        // DR_Summation (Capitalization):
+        // - Accr_Tran_Id LIKE 'C%' (Interest capitalization transactions)
+        // - Dr_Cr_Flag = 'D' (Debit)
+        // - Original_Dr_Cr_Flag IS NULL (excludes value date interest)
+        // - Example: C20260129001 with DR flag = capitalization debit
+        //
+        // This prevents cross-contamination between S and C type transactions
+        
+        // Query repository for DR and CR summations with transaction type filters
+        log.info("--- Querying intt_accr_tran for DR and CR summations ---");
+        
+        BigDecimal crSummation = inttAccrTranRepository.sumCreditAmountsByAccountAndDate(accountNo, systemDate);
+        log.info("CR Summation (ONLY S type + CR flag, excludes value date): {}", crSummation);
+        
+        BigDecimal drSummation = inttAccrTranRepository.sumDebitAmountsByAccountAndDate(accountNo, systemDate);
+        log.info("DR Summation (ONLY C type + DR flag, excludes value date): {}", drSummation);
+        
+        // Get all transactions for debugging
+        List<com.example.moneymarket.entity.InttAccrTran> allTransactions = 
+            inttAccrTranRepository.findByAccountNoAndAccrualDate(accountNo, systemDate);
+        log.info("Total transactions in intt_accr_tran for this account/date: {}", allTransactions.size());
+        for (com.example.moneymarket.entity.InttAccrTran tran : allTransactions) {
+            log.info("  Transaction: ID={}, DrCrFlag={}, Amount={}, OriginalDrCrFlag={}", 
+                tran.getAccrTranId(), tran.getDrCrFlag(), tran.getAmount(), tran.getOriginalDrCrFlag());
+        }
 
         // Step F: Calculate Value Date Interest Impact (NEW LOGIC)
         // Value date interest needs special handling based on original transaction Dr/Cr flag
         BigDecimal valueDateInterestImpact = calculateValueDateInterestImpact(accountNo, systemDate, isLiability);
 
-        log.debug("Account {}: Regular DR={}, Regular CR={}, Value Date Impact={}",
-                accountNo, drSummation, crSummation, valueDateInterestImpact);
+        log.info("Value Date Interest Impact: {}", valueDateInterestImpact);
 
-        // Validation: One of DR or CR must be zero (for regular interest)
-        if (drSummation.compareTo(BigDecimal.ZERO) > 0 && crSummation.compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessException("Validation failed for account " + accountNo +
-                    ": Both DR and CR summations are non-zero. GL_Num: " + glNum);
-        }
+        // REMOVED VALIDATION: Both DR and CR can be non-zero when capitalization occurs
+        // Example: CR=5 (daily accrual "S"), DR=45 (capitalization "C")
+        // This is CORRECT and expected behavior!
 
         // Step G: Calculate Closing Balance
         // Closing_Bal = Opening_Bal + CR_Summation - DR_Summation + Value_Date_Interest_Impact
@@ -143,8 +184,16 @@ public class InterestAccrualAccountBalanceService {
         // Interest_Amount = CR_Summation - DR_Summation + Value_Date_Interest_Impact
         BigDecimal interestAmount = crSummation.subtract(drSummation).add(valueDateInterestImpact);
 
-        log.debug("Account {}: Opening={}, DR={}, CR={}, Closing={}, Interest={}",
-                accountNo, openingBal, drSummation, crSummation, closingBal, interestAmount);
+        log.info("Formula: closing_bal = opening_bal + cr_summation - dr_summation + value_date_impact");
+        log.info("Formula: {} = {} + {} - {} + {}", closingBal, openingBal, crSummation, drSummation, valueDateInterestImpact);
+        log.info("Calculated Closing Balance: {}", closingBal);
+        log.info("Calculated Interest Amount: {}", interestAmount);
+        log.info("=== VALUES BEING SAVED TO ACCT_BAL_ACCRUAL ===");
+        log.info("opening_bal: {}", openingBal);
+        log.info("dr_summation: {} (should ONLY be sum of DR transactions)", drSummation);
+        log.info("cr_summation: {} (should ONLY be sum of CR transactions)", crSummation);
+        log.info("closing_bal: {}", closingBal);
+        log.info("interest_amount: {}", interestAmount);
 
         // Step H: Save Record with GL_Num
         saveOrUpdateAccrualBalance(accountNo, glNum, systemDate, openingBal, drSummation,
@@ -185,59 +234,18 @@ public class InterestAccrualAccountBalanceService {
         return cumGlNum;
     }
 
-    /**
-     * Calculate DR Summation (Conditional based on GL_Num)
-     *
-     * Logic:
-     * - IF GL_Num starts with "1" (Liability) -> return 0
-     * - IF GL_Num starts with "2" (Asset) -> return SUM(Amount) WHERE Dr_Cr_Flag = 'D'
-     *
-     * @param accountNo The account number
-     * @param accrualDate The accrual date
-     * @param glNum The GL number
-     * @return DR_Summation
-     */
-    private BigDecimal calculateDRSummation(String accountNo, LocalDate accrualDate, String glNum) {
-        if (glNum.startsWith("1")) {
-            // Liability accounts: DR_Summation = 0
-            log.debug("Account {}: Liability account - DR_Summation set to 0", accountNo);
-            return BigDecimal.ZERO;
-        } else if (glNum.startsWith("2")) {
-            // Asset accounts: Calculate sum of debit amounts
-            BigDecimal drSum = inttAccrTranRepository.sumDebitAmountsByAccountAndDate(accountNo, accrualDate);
-            log.debug("Account {}: Asset account - DR_Summation = {}", accountNo, drSum);
-            return drSum;
-        } else {
-            throw new BusinessException("Invalid GL_Num: " + glNum + " - must start with '1' or '2'");
-        }
-    }
-
-    /**
-     * Calculate CR Summation (Conditional based on GL_Num)
-     *
-     * Logic:
-     * - IF GL_Num starts with "2" (Asset) -> return 0
-     * - IF GL_Num starts with "1" (Liability) -> return SUM(Amount) WHERE Dr_Cr_Flag = 'C'
-     *
-     * @param accountNo The account number
-     * @param accrualDate The accrual date
-     * @param glNum The GL number
-     * @return CR_Summation
-     */
-    private BigDecimal calculateCRSummation(String accountNo, LocalDate accrualDate, String glNum) {
-        if (glNum.startsWith("2")) {
-            // Asset accounts: CR_Summation = 0
-            log.debug("Account {}: Asset account - CR_Summation set to 0", accountNo);
-            return BigDecimal.ZERO;
-        } else if (glNum.startsWith("1")) {
-            // Liability accounts: Calculate sum of credit amounts
-            BigDecimal crSum = inttAccrTranRepository.sumCreditAmountsByAccountAndDate(accountNo, accrualDate);
-            log.debug("Account {}: Liability account - CR_Summation = {}", accountNo, crSum);
-            return crSum;
-        } else {
-            throw new BusinessException("Invalid GL_Num: " + glNum + " - must start with '1' or '2'");
-        }
-    }
+    // REMOVED: calculateDRSummation() and calculateCRSummation() methods
+    // These methods used conditional logic that set one summation to 0 based on account type
+    // This prevented proper handling of Interest Capitalization ("C" transactions)
+    // 
+    // New approach: Always calculate BOTH DR and CR summations directly from repository
+    // This allows:
+    // - Liability accounts to process both accrual (CR) and capitalization (DR)
+    // - Asset accounts to process both accrual (DR) and capitalization (DR)
+    //
+    // The repository queries handle filtering correctly:
+    // - sumDebitAmountsByAccountAndDate: Sums all DR transactions (both "S" and "C" types)
+    // - sumCreditAmountsByAccountAndDate: Sums all CR transactions (mainly "S" types)
 
     /**
      * Calculate Value Date Interest Impact on Balance

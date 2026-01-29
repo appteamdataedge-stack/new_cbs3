@@ -13,7 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Optional;
 import java.util.Random;
+import java.util.stream.Collectors;
 
 /**
  * Service for Interest Capitalization
@@ -42,7 +45,12 @@ public class InterestCapitalizationService {
     @Transactional
     public InterestCapitalizationResponseDTO capitalizeInterest(InterestCapitalizationRequestDTO request) {
         String accountNo = request.getAccountNo();
-        log.info("Starting interest capitalization for account: {}", accountNo);
+        
+        log.info("========================================");
+        log.info("=== INTEREST CAPITALIZATION STARTED ===");
+        log.info("========================================");
+        log.info("Account Number: {}", accountNo);
+        log.info("Narration: {}", request.getNarration());
 
         // 1. Fetch and validate account
         CustAcctMaster account = custAcctMasterRepository.findById(accountNo)
@@ -53,6 +61,8 @@ public class InterestCapitalizationService {
 
         // 3. Get system date
         LocalDate systemDate = systemDateService.getSystemDate();
+        log.info("System Date (Business Date) from SystemDateService: {}", systemDate);
+        log.info("LocalDate.now() (Device Date - NOT USED): {}", LocalDate.now());
 
         // 4. Validate no duplicate payment (last interest payment date < system date)
         validateNoDuplicatePayment(account, systemDate);
@@ -126,11 +136,30 @@ public class InterestCapitalizationService {
 
     /**
      * Get the accrued interest balance for the account
+     * Uses closing_bal (total accumulated interest) instead of cr_summation (daily accrual)
      */
     private BigDecimal getAccruedBalance(String accountNo) {
-        return acctBalAccrualRepository.findLatestByAccountNo(accountNo)
-                .map(AcctBalAccrual::getInterestAmount)
-                .orElse(BigDecimal.ZERO);
+        log.info("=== GETTING ACCRUED INTEREST BALANCE ===");
+        
+        Optional<AcctBalAccrual> acctBalAccrualOpt = acctBalAccrualRepository.findLatestByAccountNo(accountNo);
+        
+        if (acctBalAccrualOpt.isEmpty()) {
+            log.warn("No accrued balance record found for account: {}", accountNo);
+            return BigDecimal.ZERO;
+        }
+        
+        AcctBalAccrual acctBalAccrual = acctBalAccrualOpt.get();
+        BigDecimal closingBal = acctBalAccrual.getClosingBal() != null ? acctBalAccrual.getClosingBal() : BigDecimal.ZERO;
+        BigDecimal crSummation = acctBalAccrual.getCrSummation() != null ? acctBalAccrual.getCrSummation() : BigDecimal.ZERO;
+        BigDecimal interestAmount = acctBalAccrual.getInterestAmount() != null ? acctBalAccrual.getInterestAmount() : BigDecimal.ZERO;
+        
+        log.info("Account: {}", accountNo);
+        log.info("Closing Balance (Total Accumulated Interest): {}", closingBal);
+        log.info("CR Summation (Today's Daily Accrual): {}", crSummation);
+        log.info("Interest Amount (Old field): {}", interestAmount);
+        log.info("Using Closing Balance for capitalization: {}", closingBal);
+        
+        return closingBal;  // FIXED: Use closing_bal (total accumulated) instead of interestAmount
     }
 
     /**
@@ -144,11 +173,44 @@ public class InterestCapitalizationService {
 
     /**
      * Get current (real-time) balance for the account
+     * Uses latest balance record with fallback logic (same as BalanceService)
      */
     private BigDecimal getCurrentBalance(String accountNo, LocalDate systemDate) {
-        return acctBalRepository.findByTranDateAndAccountAccountNo(systemDate, accountNo)
-                .map(AcctBal::getCurrentBalance)
-                .orElse(BigDecimal.ZERO);
+        log.info("=== GETTING CURRENT BALANCE - AUDIT ===");
+        log.info("Account Number: {}", accountNo);
+        log.info("System Date (Business Date): {}", systemDate);
+        log.info("LocalDate.now() (Device Date): {}", LocalDate.now());
+        
+        // Try to get balance for the specific system date first
+        Optional<AcctBal> balanceForSystemDate = acctBalRepository.findByAccountNoAndTranDate(accountNo, systemDate);
+        if (balanceForSystemDate.isPresent()) {
+            log.info("Found balance record for system date {}: Balance = {}", 
+                    systemDate, balanceForSystemDate.get().getCurrentBalance());
+            return balanceForSystemDate.get().getCurrentBalance();
+        }
+        
+        log.warn("No balance record found for system date {}. Trying latest record...", systemDate);
+        
+        // Fall back to latest balance record (same pattern as BalanceService)
+        Optional<AcctBal> latestBalance = acctBalRepository.findLatestByAccountNo(accountNo);
+        if (latestBalance.isPresent()) {
+            log.info("Found latest balance record: Date = {}, Balance = {}", 
+                    latestBalance.get().getTranDate(), latestBalance.get().getCurrentBalance());
+            return latestBalance.get().getCurrentBalance();
+        }
+        
+        // Show what dates DO exist for this account
+        List<AcctBal> allBalances = acctBalRepository.findByAccountNoOrderByTranDateDesc(accountNo);
+        log.error("NO balance records found for account {}. Total records in acct_bal: {}", 
+                accountNo, allBalances.size());
+        if (!allBalances.isEmpty()) {
+            log.error("Available dates for this account: {}", 
+                    allBalances.stream()
+                            .map(AcctBal::getTranDate)
+                            .collect(java.util.stream.Collectors.toList()));
+        }
+        
+        return BigDecimal.ZERO;
     }
 
     /**
@@ -168,34 +230,46 @@ public class InterestCapitalizationService {
 
     /**
      * Create debit entry in Intt_Accr_Tran (Interest Expense GL)
+     * CRITICAL: accountNo must be customer account (FK constraint), glAccountNo is the GL account
      */
     private void createDebitEntry(CustAcctMaster account, String transactionId, 
                                    LocalDate systemDate, BigDecimal amount, String narration) {
         SubProdMaster subProduct = account.getSubProduct();
         String interestExpenseGL = getInterestExpenseGL(account);
 
+        log.info("=== CREATING DEBIT ENTRY IN INTT_ACCR_TRAN ===");
+        log.info("Customer Account Number: '{}'", account.getAccountNo());
+        log.info("Interest Expense GL Number: '{}'", interestExpenseGL);
+        log.info("Account Number length: {}", account.getAccountNo().length());
+        log.info("GL Account Number length: {}", interestExpenseGL != null ? interestExpenseGL.length() : "null");
+
         InttAccrTran debitEntry = InttAccrTran.builder()
                 .accrTranId(transactionId + "-1")  // Suffix for debit entry
-                .accountNo(interestExpenseGL)  // Interest Expense GL
+                .accountNo(account.getAccountNo())  // FIXED: Use customer account number (FK constraint)
                 .accrualDate(systemDate)
                 .tranDate(systemDate)
                 .valueDate(systemDate)
                 .drCrFlag(TranTable.DrCrFlag.D)
-                .tranStatus(TranTable.TranStatus.Posted)
-                .glAccountNo(interestExpenseGL)
-                .tranCcy(account.getAccountCcy())
+                .tranStatus(TranTable.TranStatus.Verified)  // Changed from Posted to Verified
+                .glAccountNo(interestExpenseGL)  // GL account for movement tracking
+                .tranCcy(account.getAccountCcy() != null ? account.getAccountCcy() : "BDT")
                 .fcyAmt(amount)
                 .exchangeRate(BigDecimal.ONE)
                 .lcyAmt(amount)
                 .amount(amount)
                 .interestRate(subProduct.getEffectiveInterestRate() != null ? 
                              subProduct.getEffectiveInterestRate() : BigDecimal.ZERO)
-                .status(InttAccrTran.AccrualStatus.Posted)
+                .status(InttAccrTran.AccrualStatus.Verified)  // Changed from Posted to Verified
                 .narration(narration != null ? narration : "Interest Capitalization - Expense")
+                .udf1("Frontend_user")  // Set verifier field
                 .build();
 
+        log.info("Saving debit entry with Account_No='{}', GL_Account_No='{}'", 
+                 debitEntry.getAccountNo(), debitEntry.getGlAccountNo());
+
         inttAccrTranRepository.save(debitEntry);
-        log.debug("Created debit entry: {} for GL: {}", transactionId + "-1", interestExpenseGL);
+        log.info("Created debit entry: {} for customer account: {}, GL: {} with amount: {}", 
+                 transactionId + "-1", account.getAccountNo(), interestExpenseGL, amount);
     }
 
     /**
@@ -208,19 +282,21 @@ public class InterestCapitalizationService {
                 .tranDate(systemDate)
                 .valueDate(systemDate)
                 .drCrFlag(TranTable.DrCrFlag.C)
-                .tranStatus(TranTable.TranStatus.Posted)
+                .tranStatus(TranTable.TranStatus.Verified)  // Changed from Posted to Verified
                 .accountNo(account.getAccountNo())
-                .tranCcy(account.getAccountCcy())
+                .tranCcy(account.getAccountCcy() != null ? account.getAccountCcy() : "BDT")
                 .fcyAmt(amount)
                 .exchangeRate(BigDecimal.ONE)
                 .lcyAmt(amount)
                 .debitAmount(BigDecimal.ZERO)
                 .creditAmount(amount)
                 .narration(narration != null ? narration : "Interest Capitalization - Credit")
+                .udf1("Frontend_user")  // Set verifier field
                 .build();
 
         tranTableRepository.save(creditEntry);
-        log.debug("Created credit entry: {} for account: {}", transactionId + "-2", account.getAccountNo());
+        log.info("Created credit entry: {} for account: {} with amount: {}", 
+                 transactionId + "-2", account.getAccountNo(), amount);
     }
 
     /**
@@ -229,16 +305,59 @@ public class InterestCapitalizationService {
      * Uses latest balance record with fallback logic (same pattern as BalanceService)
      */
     private void updateAccountAfterCapitalization(String accountNo, LocalDate systemDate, BigDecimal accruedInterest) {
-        log.debug("Updating account balance after capitalization for account: {} on date: {}", accountNo, systemDate);
+        log.info("=== UPDATING ACCOUNT BALANCE - AUDIT ===");
+        log.info("Account Number: {}", accountNo);
+        log.info("System Date (Business Date): {}", systemDate);
+        log.info("LocalDate.now() (Device Date): {}", LocalDate.now());
+        log.info("Accrued Interest to Add: {}", accruedInterest);
+        
+        // Try to get balance for the specific system date first
+        Optional<AcctBal> balanceForSystemDate = acctBalRepository.findByAccountNoAndTranDate(accountNo, systemDate);
+        if (balanceForSystemDate.isPresent()) {
+            log.info("Found balance record for system date {}", systemDate);
+        } else {
+            log.warn("No balance record found for system date {}. Trying latest record...", systemDate);
+        }
         
         // Get account balance - try specific date first, then fall back to latest
         // This matches the pattern used in BalanceService.getComputedAccountBalance()
-        AcctBal acctBal = acctBalRepository.findByAccountNoAndTranDate(accountNo, systemDate)
-                .or(() -> acctBalRepository.findLatestByAccountNo(accountNo))
-                .orElseThrow(() -> new BusinessException("Account balance record not found for account: " + accountNo));
-
-        log.debug("Found balance record for account {}: Tran_Date={}, Current_Balance={}", 
-                  accountNo, acctBal.getTranDate(), acctBal.getCurrentBalance());
+        Optional<AcctBal> acctBalOpt = acctBalRepository.findByAccountNoAndTranDate(accountNo, systemDate)
+                .or(() -> acctBalRepository.findLatestByAccountNo(accountNo));
+        
+        if (acctBalOpt.isEmpty()) {
+            // Show what dates DO exist for this account
+            List<AcctBal> allBalances = acctBalRepository.findByAccountNoOrderByTranDateDesc(accountNo);
+            log.error("=== BALANCE RECORD NOT FOUND - DETAILED AUDIT ===");
+            log.error("Account Number: {}", accountNo);
+            log.error("System Date searched: {}", systemDate);
+            log.error("Total balance records for this account: {}", allBalances.size());
+            
+            if (!allBalances.isEmpty()) {
+                log.error("Available dates for this account:");
+                allBalances.forEach(bal -> 
+                    log.error("  - Date: {}, Balance: {}", bal.getTranDate(), bal.getCurrentBalance())
+                );
+            } else {
+                log.error("NO balance records exist for this account in acct_bal table!");
+            }
+            
+            throw new BusinessException(String.format(
+                "Account balance record not found for system date. Account: %s, System Date: %s, Device Date: %s. " +
+                "Available dates: %s",
+                accountNo, 
+                systemDate, 
+                LocalDate.now(),
+                allBalances.isEmpty() ? "NONE" : 
+                    allBalances.stream()
+                        .map(AcctBal::getTranDate)
+                        .map(Object::toString)
+                        .collect(java.util.stream.Collectors.joining(", "))
+            ));
+        }
+        
+        AcctBal acctBal = acctBalOpt.get();
+        log.info("Found balance record: Tran_Date={}, Current_Balance={}", 
+                  acctBal.getTranDate(), acctBal.getCurrentBalance());
 
         // Add accrued interest to current balance
         BigDecimal oldBalance = acctBal.getCurrentBalance();
@@ -253,17 +372,18 @@ public class InterestCapitalizationService {
         
         acctBalRepository.save(acctBal);
         
-        log.info("Account balance updated for {}: {} + {} = {}", 
-                 accountNo, oldBalance, accruedInterest, newCurrentBalance);
+        log.info("Account balance updated successfully: {} + {} = {}", 
+                 oldBalance, accruedInterest, newCurrentBalance);
 
-        // Reset accrued balance to zero
-        AcctBalAccrual acctBalAccrual = acctBalAccrualRepository.findLatestByAccountNo(accountNo)
-                .orElseThrow(() -> new BusinessException("Accrued balance record not found"));
-
-        acctBalAccrual.setInterestAmount(BigDecimal.ZERO);
-        acctBalAccrualRepository.save(acctBalAccrual);
-
-        log.debug("Reset accrued balance to 0 for account: {}", accountNo);
+        // DO NOT directly update acct_bal_accrual here!
+        // The acct_bal_accrual update will be handled by EOD Batch Job 6
+        // which will process the "C" (Capitalization) debit transaction created above
+        
+        log.info("=== ACCT_BAL_ACCRUAL UPDATE DEFERRED TO EOD ===");
+        log.info("Capitalization debit transaction created in intt_accr_tran (amount: {})", accruedInterest);
+        log.info("EOD Batch Job 6 will process this 'C' transaction and update acct_bal_accrual");
+        log.info("Formula: closing_bal = prev_closing_bal + cr_summation - dr_summation");
+        log.info("Expected result after EOD: closing_bal will be reduced by {}", accruedInterest);
     }
 
     /**

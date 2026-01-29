@@ -292,13 +292,31 @@ public class BalanceService {
      * Get latest interest accrued closing balance for an account
      * Fetches the most recent closing balance from acct_bal_accrual table
      * 
+     * IMPORTANT: If interest was capitalized today (last_interest_payment_date = business_date),
+     * returns 0 because the accrued balance will be updated by EOD Batch Job 6 later.
+     * This provides real-time accuracy before EOD runs.
+     * 
      * FIXED: Now uses direct native query to avoid JPA relationship issues
      * 
      * @param accountNo The account number
-     * @return The latest interest accrued closing balance, or 0 if no records found
+     * @return The latest interest accrued closing balance, or 0 if no records found or if capitalized today
      */
     private BigDecimal getLatestInterestAccrued(String accountNo) {
         log.debug("Fetching latest interest accrued for account: {}", accountNo);
+        
+        // Check if interest was capitalized today
+        LocalDate businessDate = systemDateService.getSystemDate();
+        Optional<CustAcctMaster> accountOpt = custAcctMasterRepository.findById(accountNo);
+        
+        if (accountOpt.isPresent()) {
+            CustAcctMaster account = accountOpt.get();
+            LocalDate lastInterestPayDate = account.getLastInterestPaymentDate();
+            
+            if (lastInterestPayDate != null && lastInterestPayDate.equals(businessDate)) {
+                log.info("Interest was capitalized TODAY for account {}. Showing accrued balance as 0 (EOD will update acct_bal_accrual later)", accountNo);
+                return BigDecimal.ZERO;
+            }
+        }
         
         try {
             // Use native query method to directly query by Account_No column

@@ -70,34 +70,44 @@ public interface InttAccrTranRepository extends JpaRepository<InttAccrTran, Stri
                                                             @Param("prefix") String prefix);
 
     /**
-     * Sum debit amounts for a specific account and accrual date
-     * EXCLUDES value date interest (records with non-null Original_Dr_Cr_Flag)
-     * Returns 0 if no records found
-     *
+     * Sum debit amounts for CAPITALIZATION transactions (C type) only
+     * CRITICAL: Only sums transactions where:
+     * - Accr_Tran_Id starts with 'C' (Interest Capitalization)
+     * - Dr_Cr_Flag = 'D' (Debit)
+     * - Original_Dr_Cr_Flag IS NULL (excludes value date interest)
+     * 
+     * This ensures dr_summation ONLY includes capitalization debits, NOT accrual debits.
+     * 
      * @param accountNo The account number
      * @param accrualDate The accrual date
-     * @return Sum of debit amounts (regular interest only)
+     * @return Sum of C type debit amounts only
      */
     @Query("SELECT COALESCE(SUM(i.amount), 0) FROM InttAccrTran i " +
            "WHERE i.accountNo = :accountNo " +
            "AND i.accrualDate = :accrualDate " +
+           "AND i.accrTranId LIKE 'C%' " +
            "AND i.drCrFlag = 'D' " +
            "AND i.originalDrCrFlag IS NULL")
     BigDecimal sumDebitAmountsByAccountAndDate(@Param("accountNo") String accountNo,
                                                 @Param("accrualDate") LocalDate accrualDate);
 
     /**
-     * Sum credit amounts for a specific account and accrual date
-     * EXCLUDES value date interest (records with non-null Original_Dr_Cr_Flag)
-     * Returns 0 if no records found
-     *
+     * Sum credit amounts for ACCRUAL transactions (S type) only
+     * CRITICAL: Only sums transactions where:
+     * - Accr_Tran_Id starts with 'S' (System interest accrual)
+     * - Dr_Cr_Flag = 'C' (Credit)
+     * - Original_Dr_Cr_Flag IS NULL (excludes value date interest)
+     * 
+     * This ensures cr_summation ONLY includes daily accrual credits, NOT capitalization credits.
+     * 
      * @param accountNo The account number
      * @param accrualDate The accrual date
-     * @return Sum of credit amounts (regular interest only)
+     * @return Sum of S type credit amounts only
      */
     @Query("SELECT COALESCE(SUM(i.amount), 0) FROM InttAccrTran i " +
            "WHERE i.accountNo = :accountNo " +
            "AND i.accrualDate = :accrualDate " +
+           "AND i.accrTranId LIKE 'S%' " +
            "AND i.drCrFlag = 'C' " +
            "AND i.originalDrCrFlag IS NULL")
     BigDecimal sumCreditAmountsByAccountAndDate(@Param("accountNo") String accountNo,
@@ -138,4 +148,9 @@ public interface InttAccrTranRepository extends JpaRepository<InttAccrTran, Stri
     List<InttAccrTran> findByAccountNoAndAccrualDateAndOriginalDrCrFlagNotNull(
             @Param("accountNo") String accountNo,
             @Param("accrualDate") LocalDate accrualDate);
+    
+    /**
+     * Find all transactions for a specific account and accrual date (for debugging)
+     */
+    List<InttAccrTran> findByAccountNoAndAccrualDate(String accountNo, LocalDate accrualDate);
 }
