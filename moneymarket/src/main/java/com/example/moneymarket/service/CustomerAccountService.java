@@ -46,50 +46,85 @@ public class CustomerAccountService {
      */
     @Transactional
     public CustomerAccountResponseDTO createAccount(CustomerAccountRequestDTO accountRequestDTO) {
-        // Validate customer exists
-        CustMaster customer = custMasterRepository.findById(accountRequestDTO.getCustId())
-                .orElseThrow(() -> new ResourceNotFoundException("Customer", "ID", accountRequestDTO.getCustId()));
+        try {
+            log.info("Starting account creation - Customer ID: {}, Sub-Product ID: {}", 
+                    accountRequestDTO.getCustId(), accountRequestDTO.getSubProductId());
+            
+            // Validate customer exists
+            CustMaster customer = custMasterRepository.findById(accountRequestDTO.getCustId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer", "ID", accountRequestDTO.getCustId()));
+            String customerDisplayName = customer.getCustType() == CustMaster.CustomerType.Individual 
+                    ? (customer.getFirstName() + " " + customer.getLastName()) 
+                    : customer.getTradeName();
+            log.debug("Customer found: {} - {}", customer.getCustId(), customerDisplayName);
 
-        // Validate sub-product exists and is active (with Product relationship loaded)
-        SubProdMaster subProduct = subProdMasterRepository.findByIdWithProduct(accountRequestDTO.getSubProductId())
-                .orElseThrow(() -> new ResourceNotFoundException("Sub-Product", "ID", accountRequestDTO.getSubProductId()));
+            // Validate sub-product exists and is active (with Product relationship loaded)
+            SubProdMaster subProduct = subProdMasterRepository.findByIdWithProduct(accountRequestDTO.getSubProductId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Sub-Product", "ID", accountRequestDTO.getSubProductId()));
+            log.debug("Sub-Product found: {} - {}, Product: {} - {}, Currency: {}", 
+                    subProduct.getSubProductId(), subProduct.getSubProductName(),
+                    subProduct.getProduct().getProductId(), subProduct.getProduct().getProductName(),
+                    subProduct.getProduct().getCurrency());
 
-        if (subProduct.getSubProductStatus() != SubProdMaster.SubProductStatus.Active) {
-            throw new BusinessException("Sub-Product is not active");
+            if (subProduct.getSubProductStatus() != SubProdMaster.SubProductStatus.Active) {
+                throw new BusinessException("Sub-Product is not active");
+            }
+
+            // Apply Tenor and Date of Maturity logic
+            applyTenorAndMaturityLogic(accountRequestDTO, subProduct);
+
+            // Generate customer account number using the new format
+            String accountNo = accountNumberService.generateCustomerAccountNumber(customer, subProduct);
+            String glNum = subProduct.getCumGLNum();
+            log.debug("Generated account number: {}, GL: {}", accountNo, glNum);
+
+            // Map DTO to entity
+            CustAcctMaster account = mapToEntity(accountRequestDTO, customer, subProduct, accountNo, glNum);
+            log.debug("Account entity created with currency: {}", account.getAccountCcy());
+
+            // Save the account
+            CustAcctMaster savedAccount = custAcctMasterRepository.save(account);
+            log.info("Account saved to database: {}", savedAccount.getAccountNo());
+            
+            // Initialize account balance (Acct_Bal & opening row for daily master if required)
+            AcctBal accountBalance = AcctBal.builder()
+                    // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
+                    .tranDate(systemDateService.getSystemDate()) // Required field for composite primary key
+                    .accountNo(savedAccount.getAccountNo()) // Required field for composite primary key
+                    .accountCcy(subProduct.getProduct().getCurrency()) // ✅ Set currency from Product (same as account)
+                    .currentBalance(BigDecimal.ZERO)
+                    .availableBalance(BigDecimal.ZERO)
+                    .lastUpdated(systemDateService.getSystemDateTime())
+                    .build();
+            
+            acctBalRepository.save(accountBalance);
+            log.info("Account balance initialized for account: {}, Currency: {}", 
+                    savedAccount.getAccountNo(), accountBalance.getAccountCcy());
+
+            log.info("✅ Customer Account created successfully - Account: {}, Currency: {}, Product: {}", 
+                    savedAccount.getAccountNo(), savedAccount.getAccountCcy(), 
+                    subProduct.getProduct().getProductName());
+
+            // Return the response with success message
+            CustomerAccountResponseDTO response = mapToResponse(savedAccount, accountBalance);
+            response.setMessage("Account Number " + savedAccount.getAccountNo() + " created");
+            
+            return response;
+            
+        } catch (ResourceNotFoundException e) {
+            log.error("❌ Resource not found during account creation - Customer: {}, Sub-Product: {}, Error: {}", 
+                    accountRequestDTO.getCustId(), accountRequestDTO.getSubProductId(), e.getMessage());
+            throw e;
+        } catch (BusinessException e) {
+            log.error("❌ Business rule violation during account creation - Customer: {}, Sub-Product: {}, Error: {}", 
+                    accountRequestDTO.getCustId(), accountRequestDTO.getSubProductId(), e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Unexpected error during account creation - Customer: {}, Sub-Product: {}", 
+                    accountRequestDTO.getCustId(), accountRequestDTO.getSubProductId(), e);
+            log.error("Error details - Type: {}, Message: {}", e.getClass().getName(), e.getMessage());
+            throw new BusinessException("Failed to create account: " + e.getMessage(), e);
         }
-
-        // Apply Tenor and Date of Maturity logic
-        applyTenorAndMaturityLogic(accountRequestDTO, subProduct);
-
-        // Generate customer account number using the new format
-        String accountNo = accountNumberService.generateCustomerAccountNumber(customer, subProduct);
-        String glNum = subProduct.getCumGLNum();
-
-        // Map DTO to entity
-        CustAcctMaster account = mapToEntity(accountRequestDTO, customer, subProduct, accountNo, glNum);
-
-        // Save the account
-        CustAcctMaster savedAccount = custAcctMasterRepository.save(account);
-        
-        // Initialize account balance (Acct_Bal & opening row for daily master if required)
-        AcctBal accountBalance = AcctBal.builder()
-                // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
-                .tranDate(systemDateService.getSystemDate()) // Required field for composite primary key
-                .accountNo(savedAccount.getAccountNo()) // Required field for composite primary key
-                .currentBalance(BigDecimal.ZERO)
-                .availableBalance(BigDecimal.ZERO)
-                .lastUpdated(systemDateService.getSystemDateTime())
-                .build();
-        
-        acctBalRepository.save(accountBalance);
-
-        log.info("Customer Account created with account number: {}", savedAccount.getAccountNo());
-
-        // Return the response with success message
-        CustomerAccountResponseDTO response = mapToResponse(savedAccount, accountBalance);
-        response.setMessage("Account Number " + savedAccount.getAccountNo() + " created");
-        
-        return response;
     }
 
     /**
@@ -250,10 +285,18 @@ public class CustomerAccountService {
                     dto.getLoanLimit(), accountNo, glNum);
         }
         
+        // Get currency from Product (via SubProduct relationship)
+        String productCurrency = subProduct.getProduct().getCurrency();
+        log.info("Creating account {} with currency: {} from product: {} ({})", 
+                accountNo, productCurrency, 
+                subProduct.getProduct().getProductName(), 
+                subProduct.getProduct().getProductCode());
+        
         return CustAcctMaster.builder()
                 .accountNo(accountNo)
                 .subProduct(subProduct)
                 .glNum(glNum)
+                .accountCcy(productCurrency) // ✅ Set currency from Product, not default BDT
                 .customer(customer)
                 .custName(dto.getCustName())
                 .acctName(dto.getAcctName())

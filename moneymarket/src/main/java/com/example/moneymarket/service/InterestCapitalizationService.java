@@ -259,7 +259,7 @@ public class InterestCapitalizationService {
                 .amount(amount)
                 .interestRate(subProduct.getEffectiveInterestRate() != null ? 
                              subProduct.getEffectiveInterestRate() : BigDecimal.ZERO)
-                .status(InttAccrTran.AccrualStatus.Verified)  // Changed from Posted to Verified
+                .status(InttAccrTran.AccrualStatus.Pending)  // ✅ FIX: Set to Pending so EOD Step 3 processes it
                 .narration(narration != null ? narration : "Interest Capitalization - Expense")
                 .udf1("Frontend_user")  // Set verifier field
                 .build();
