@@ -34,6 +34,7 @@ public class InterestCapitalizationService {
     private final InttAccrTranRepository inttAccrTranRepository;
     private final SubProdMasterRepository subProdMasterRepository;
     private final SystemDateService systemDateService;
+    private final TransactionHistoryService transactionHistoryService;
     private final Random random = new Random();
 
     /**
@@ -297,6 +298,17 @@ public class InterestCapitalizationService {
         tranTableRepository.save(creditEntry);
         log.info("Created credit entry: {} for account: {} with amount: {}", 
                  transactionId + "-2", account.getAccountNo(), amount);
+        
+        // ✅ FIX: Create transaction history record for Statement of Accounts
+        // This ensures Interest Capitalization transactions appear in statements
+        try {
+            transactionHistoryService.createTransactionHistory(creditEntry, "SYSTEM");
+            log.info("Transaction history created for Interest Capitalization: {}", transactionId + "-2");
+        } catch (Exception e) {
+            log.error("Failed to create transaction history for capitalization {}: {}", 
+                     transactionId + "-2", e.getMessage(), e);
+            // Don't fail the capitalization process if history creation fails
+        }
     }
 
     /**
