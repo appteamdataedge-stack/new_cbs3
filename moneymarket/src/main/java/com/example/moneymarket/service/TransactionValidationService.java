@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Service for transaction validation
@@ -63,7 +64,7 @@ public class TransactionValidationService {
      * 
      * @param accountNo The account number
      * @param drCrFlag The debit/credit flag
-     * @param amount The transaction amount
+     * @param amount The transaction amount (in account's currency - FCY for USD, LCY for BDT)
      * @param systemDate The system date to use for calculations
      * @return true if the transaction is valid, false otherwise
      * @throws BusinessException if the account does not exist or validation fails
@@ -73,11 +74,16 @@ public class TransactionValidationService {
         // Get unified account information
         UnifiedAccountService.AccountInfo accountInfo = unifiedAccountService.getAccountInfo(accountNo);
         
+        // ✅ FIX ISSUE 4: Get account currency from Product → SubProduct → Account hierarchy
+        String accountCurrency = unifiedAccountService.getAccountCurrency(accountNo);
+        log.debug("Validating transaction for account {} with currency: {}", accountNo, accountCurrency);
+        
         // Get current account balance
         AcctBal balance = acctBalRepository.findLatestByAccountNo(accountNo)
                 .orElseThrow(() -> new BusinessException("Balance for account " + accountNo + " not found"));
         
         // Calculate resulting balance after transaction
+        // IMPORTANT: Balance is always in account's currency (USD for USD accounts, BDT for BDT accounts)
         BigDecimal currentBalance = balance.getCurrentBalance();
         BigDecimal resultingBalance;
         
@@ -89,7 +95,7 @@ public class TransactionValidationService {
         
         // Apply different validation rules based on account type
         if (accountInfo.isCustomerAccount()) {
-            return validateCustomerAccountTransaction(accountNo, drCrFlag, amount, systemDate, accountInfo, balance);
+            return validateCustomerAccountTransaction(accountNo, drCrFlag, amount, systemDate, accountInfo, balance, accountCurrency);
         } else {
             return validateOfficeAccountTransaction(accountNo, drCrFlag, amount, resultingBalance, accountInfo);
         }
@@ -105,7 +111,7 @@ public class TransactionValidationService {
      */
     private boolean validateCustomerAccountTransaction(String accountNo, DrCrFlag drCrFlag, BigDecimal amount, 
                                                      LocalDate systemDate, UnifiedAccountService.AccountInfo accountInfo, 
-                                                     AcctBal balance) {
+                                                     AcctBal balance, String accountCurrency) {
         BigDecimal currentBalance = balance.getCurrentBalance();
         BigDecimal resultingBalance;
         
@@ -123,14 +129,15 @@ public class TransactionValidationService {
                 
                 if (amount.compareTo(availableBalance) > 0) {
                     log.warn("Customer Asset Account {} (GL: {}) - Debit exceeds available balance (including loan limit). " +
-                            "Available: {}, Debit amount: {}", 
-                            accountNo, accountInfo.getGlNum(), availableBalance, amount);
+                            "Available: {} {}, Debit amount: {} {}", 
+                            accountNo, accountInfo.getGlNum(), availableBalance, accountCurrency, amount, accountCurrency);
                     
+                    // ✅ FIX ISSUE 1: Include currency in error message
                     throw new BusinessException(
                         String.format("Insufficient balance for Asset Account %s (GL: %s). " +
-                                    "Available balance (including loan limit): %s, Debit amount: %s. " +
+                                    "Available balance (including loan limit): %.2f %s, Debit amount: %.2f %s. " +
                                     "Cannot debit more than available balance plus loan limit.",
-                                    accountNo, accountInfo.getGlNum(), availableBalance, amount)
+                                    accountNo, accountInfo.getGlNum(), availableBalance, accountCurrency, amount, accountCurrency)
                     );
                 }
                 
@@ -139,19 +146,30 @@ public class TransactionValidationService {
                         accountNo, accountInfo.getGlNum(), availableBalance, amount);
             }
             
-            // Rule 2: Resulting balance cannot be positive (applies to both debit and credit)
-            if (resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
-                log.warn("Customer Asset Account {} (GL: {}) - Cannot have positive balance. " +
-                        "Current: {}, Transaction: {} {}, Resulting: {}", 
-                        accountNo, accountInfo.getGlNum(), currentBalance, drCrFlag, amount, resultingBalance);
+            // Rule 2: Resulting balance cannot be positive for LOAN/BORROWING asset accounts
+            // Note: Some asset accounts like Cash, Receivables can have positive balances
+            // Only LOAN accounts (GL 21xxxx) must maintain negative or zero balance
+            boolean isLoanAccount = accountInfo.getGlNum().startsWith("21");
+            
+            if (isLoanAccount && resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
+                log.warn("Customer Loan Account {} (GL: {}) - Cannot have positive balance. " +
+                        "Current: {} {}, Transaction: {} {} {}, Resulting: {} {}", 
+                        accountNo, accountInfo.getGlNum(), currentBalance, accountCurrency, 
+                        drCrFlag, amount, accountCurrency, resultingBalance, accountCurrency);
                 
                 throw new BusinessException(
-                    String.format("Asset Account %s (GL: %s) cannot have positive balance. " +
-                                "Current balance: %s, Transaction: %s %s would result in positive balance: %s. " +
-                                "Asset accounts can only have zero or negative balances.",
-                                accountNo, accountInfo.getGlNum(), currentBalance, drCrFlag, amount, resultingBalance)
+                    String.format("Loan Account %s (GL: %s) cannot have positive balance. " +
+                                "Current balance: %.2f %s, Transaction: %s %.2f %s would result in positive balance: %.2f %s. " +
+                                "Loan accounts can only have zero or negative balances (outstanding loans).",
+                                accountNo, accountInfo.getGlNum(), currentBalance, accountCurrency,
+                                drCrFlag, amount, accountCurrency, resultingBalance, accountCurrency)
                 );
             }
+            
+            log.debug("Customer Asset Account {} (GL: {}) - Balance check: Current: {} {}, Resulting: {} {} ({})",
+                    accountNo, accountInfo.getGlNum(), currentBalance, accountCurrency, 
+                    resultingBalance, accountCurrency, 
+                    isLoanAccount ? "Loan account - negative/zero required" : "Other asset - positive allowed");
             
             log.info("Customer Asset Account {} (GL: {}) - All validations passed. " +
                     "Resulting balance: {} (zero or negative)", accountNo, accountInfo.getGlNum(), resultingBalance);
@@ -174,10 +192,14 @@ public class TransactionValidationService {
             BigDecimal availableBalance = calculateAvailableBalance(accountNo, balance.getCurrentBalance(), systemDate);
             
             if (amount.compareTo(availableBalance) > 0) {
-                log.warn("Insufficient balance for customer account {}: available balance = {}, debit amount = {}", 
-                        accountNo, availableBalance, amount);
-                throw new BusinessException("Insufficient balance. Available balance: " + availableBalance + 
-                                          ", Debit amount: " + amount);
+                log.warn("Insufficient balance for customer account {}: available balance = {} {}, debit amount = {} {}", 
+                        accountNo, availableBalance, accountCurrency, amount, accountCurrency);
+                
+                // ✅ FIX ISSUE 1: Include currency in error message
+                throw new BusinessException(
+                    String.format("Insufficient balance for account %s. Available: %.2f %s, Requested: %.2f %s",
+                                accountNo, availableBalance, accountCurrency, amount, accountCurrency)
+                );
             }
         }
         
@@ -328,13 +350,39 @@ public class TransactionValidationService {
         // Use shared 3-tier fallback logic to get opening balance
         BigDecimal openingBalance = accountBalanceUpdateService.getPreviousDayClosingBalance(accountNo, systemDate);
 
-        // Get debits for the system date (only VERIFIED transactions)
-        BigDecimal dateDebits = tranTableRepository.sumDebitTransactionsForAccountOnDate(accountNo, systemDate)
-                .orElse(BigDecimal.ZERO);
-
-        // Get credits for the system date (only VERIFIED transactions)
-        BigDecimal dateCredits = tranTableRepository.sumCreditTransactionsForAccountOnDate(accountNo, systemDate)
-                .orElse(BigDecimal.ZERO);
+        // ✅ CRITICAL FIX: Get account currency to sum correct amounts
+        String accountCurrency = unifiedAccountService.getAccountCurrency(accountNo);
+        
+        BigDecimal dateDebits;
+        BigDecimal dateCredits;
+        
+        if ("BDT".equals(accountCurrency)) {
+            // BDT account: Sum LCY amounts (default behavior)
+            dateDebits = tranTableRepository.sumDebitTransactionsForAccountOnDate(accountNo, systemDate)
+                    .orElse(BigDecimal.ZERO);
+            dateCredits = tranTableRepository.sumCreditTransactionsForAccountOnDate(accountNo, systemDate)
+                    .orElse(BigDecimal.ZERO);
+            
+            log.debug("BDT account {} - Using LCY amounts. Debits: {}, Credits: {}", 
+                    accountNo, dateDebits, dateCredits);
+        } else {
+            // ✅ USD account: Sum FCY amounts (NOT LCY!)
+            List<com.example.moneymarket.entity.TranTable> transactions = 
+                    tranTableRepository.findByAccountNoAndTranDate(accountNo, systemDate);
+            
+            dateDebits = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == com.example.moneymarket.entity.TranTable.DrCrFlag.D)
+                    .map(com.example.moneymarket.entity.TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            dateCredits = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == com.example.moneymarket.entity.TranTable.DrCrFlag.C)
+                    .map(com.example.moneymarket.entity.TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            log.debug("USD account {} - Using FCY amounts. Debits: {} USD, Credits: {} USD", 
+                    accountNo, dateDebits, dateCredits);
+        }
 
         // Get account information to determine if asset or liability account
         UnifiedAccountService.AccountInfo accountInfo = unifiedAccountService.getAccountInfo(accountNo);
@@ -354,13 +402,21 @@ public class TransactionValidationService {
             }
         }
 
-        // Calculate available balance
+        // Calculate available balance (all amounts in account's currency)
         // For Asset accounts: Opening + Loan Limit + Credits - Debits
         // For Liability accounts: Opening + Credits - Debits
         BigDecimal availableBalance = openingBalance
                 .add(loanLimit)
                 .add(dateCredits)
                 .subtract(dateDebits);
+        
+        log.info("=== AVAILABLE BALANCE CALCULATION ===");
+        log.info("Account: {} (Currency: {})", accountNo, accountCurrency);
+        log.info("Opening Balance: {} {}", openingBalance, accountCurrency);
+        log.info("Today's Debits: {} {}", dateDebits, accountCurrency);
+        log.info("Today's Credits: {} {}", dateCredits, accountCurrency);
+        log.info("Loan Limit: {} {}", loanLimit, accountCurrency);
+        log.info("Available Balance: {} {}", availableBalance, accountCurrency);
 
         if (accountInfo.isAssetAccount() && loanLimit.compareTo(BigDecimal.ZERO) > 0) {
             log.debug("Available Balance for ASSET account {} on {}: Opening={}, Loan Limit={}, Credits={}, Debits={}, Available={}",

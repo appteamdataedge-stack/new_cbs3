@@ -209,7 +209,7 @@ const AccountDetails = () => {
                   <Typography variant="subtitle2" color="text.secondary">
                     Currency
                   </Typography>
-                  <Typography variant="body1">N/A</Typography>
+                  <Typography variant="body1">{account.accountCcy || 'N/A'}</Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="subtitle2" color="text.secondary">
@@ -234,14 +234,14 @@ const AccountDetails = () => {
                     Interest Rate
                   </Typography>
                   <Typography variant="body1">
-                    N/A
+                    {account.interestRate ? `${account.interestRate}%` : 'N/A'}
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="subtitle2" color="text.secondary">
                     Created By
                   </Typography>
-                  <Typography variant="body1">N/A</Typography>
+                  <Typography variant="body1">{account.makerId || 'N/A'}</Typography>
                 </Grid>
               </Grid>
             </CardContent>

@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Entity
 @Table(name = "Cust_Acct_Master")
@@ -68,6 +69,17 @@ public class CustAcctMaster {
     @Column(name = "Last_Interest_Payment_Date")
     private LocalDate lastInterestPaymentDate;
 
+    // ✅ TEMPORARY FIX: Use @Transient until database columns are added
+    // These fields are NOT persisted to database yet (columns don't exist)
+    // After running database migration, change @Transient to @Column
+    @Transient
+    private String makerId;
+
+    @Transient
+    private LocalDate entryDate;
+
+    @Transient
+    private LocalTime entryTime;
 
     public enum AccountStatus {
         Active, Inactive, Closed, Dormant

@@ -307,6 +307,11 @@ public class CustomerAccountService {
                 .branchCode(dto.getBranchCode())
                 .accountStatus(dto.getAccountStatus())
                 .loanLimit(loanLimit)
+                // NOTE: Audit fields (makerId, entryDate, entryTime) are @Transient until DB migration
+                // After migrating database, uncomment these lines and change @Transient to @Column in entity
+                // .makerId("SYSTEM")
+                // .entryDate(systemDateService.getSystemDate())
+                // .entryTime(java.time.LocalTime.now())
                 .build();
     }
 
@@ -344,6 +349,10 @@ public class CustomerAccountService {
                 .lastInterestPaymentDate(entity.getLastInterestPaymentDate())  // Last interest capitalization date
                 .interestBearing(entity.getSubProduct().getProduct().getInterestBearingFlag())  // Interest bearing flag
                 .productName(entity.getSubProduct().getProduct().getProductName())  // Product name
+                // ✅ FIX: Added missing fields for Account Details page (ISSUE 2)
+                .accountCcy(entity.getAccountCcy())  // Account currency from Product (USD, BDT, etc.)
+                .interestRate(entity.getSubProduct().getEffectiveInterestRate())  // Interest rate from Sub-Product
+                .makerId(entity.getMakerId() != null ? entity.getMakerId() : "N/A")  // Handle null - field is @Transient until DB migration
                 .build();
     }
 

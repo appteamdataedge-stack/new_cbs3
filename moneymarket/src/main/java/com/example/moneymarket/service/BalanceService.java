@@ -249,7 +249,7 @@ public class BalanceService {
 
         // Calculate available balance based on account type
         // For Asset accounts (GL starting with "2"): Include loan limit
-        // For Liability accounts (GL starting with "1"): No loan limit
+        // For Liability accounts (GL starting with "1"): Use real-time computed balance
         BigDecimal availableBalance;
         if (isCustomerAccount && glNum != null && glNum.startsWith("2")) {
             // Asset account: Available = Previous Day Opening + Loan Limit + Credits - Debits
@@ -261,11 +261,14 @@ public class BalanceService {
             log.debug("Asset account {} - Available balance includes loan limit: Previous Day Opening={}, Loan Limit={}, Credits={}, Debits={}, Available={}",
                     accountNo, previousDayOpeningBalance, loanLimit, dateCredits, dateDebits, availableBalance);
         } else {
-            // Liability account or Office account: Available = Previous Day Opening
-            availableBalance = previousDayOpeningBalance;
+            // ✅ FIX: Liability account or Office account: Available = Previous Day Opening + Today's Credits - Today's Debits
+            // This ensures the available balance updates in real-time as transactions are made
+            availableBalance = previousDayOpeningBalance
+                    .add(dateCredits)
+                    .subtract(dateDebits);
             
-            log.debug("Liability/Office account {} - Available balance = Previous Day Opening: {}",
-                    accountNo, availableBalance);
+            log.debug("Liability/Office account {} - Available balance = Previous Day Opening + Today's Credits - Today's Debits: {} + {} - {} = {}",
+                    accountNo, previousDayOpeningBalance, dateCredits, dateDebits, availableBalance);
         }
 
         log.debug("Computed balance for account {} on date {}: Previous Day Opening={}, Current Day Debits={}, Current Day Credits={}, Computed={}",

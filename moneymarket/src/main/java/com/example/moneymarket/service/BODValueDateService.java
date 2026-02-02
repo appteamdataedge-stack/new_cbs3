@@ -95,8 +95,17 @@ public class BODValueDateService {
 
         // Validate transaction before posting
         try {
+            // ✅ CRITICAL FIX: Use account currency to determine validation amount
+            String accountCurrency = unifiedAccountService.getAccountCurrency(transaction.getAccountNo());
+            BigDecimal validationAmount = "USD".equals(accountCurrency) 
+                    ? transaction.getFcyAmt() 
+                    : transaction.getLcyAmt();
+            
+            log.debug("BOD: Validating {} account {} with amount: {} {}", 
+                    accountCurrency, transaction.getAccountNo(), validationAmount, accountCurrency);
+            
             validationService.validateTransaction(
-                transaction.getAccountNo(), transaction.getDrCrFlag(), transaction.getLcyAmt());
+                transaction.getAccountNo(), transaction.getDrCrFlag(), validationAmount);
         } catch (Exception e) {
             log.error("BOD: Validation failed for future-dated transaction {}: {}",
                 transaction.getTranId(), e.getMessage());
@@ -104,8 +113,14 @@ public class BODValueDateService {
         }
 
         // Update account balance
+        // ✅ CRITICAL FIX: Use account currency to determine update amount
+        String accountCurrency = unifiedAccountService.getAccountCurrency(transaction.getAccountNo());
+        BigDecimal updateAmount = "USD".equals(accountCurrency) 
+                ? transaction.getFcyAmt() 
+                : transaction.getLcyAmt();
+        
         validationService.updateAccountBalanceForTransaction(
-            transaction.getAccountNo(), transaction.getDrCrFlag(), transaction.getLcyAmt());
+            transaction.getAccountNo(), transaction.getDrCrFlag(), updateAmount);
 
         // Update GL balance
         BigDecimal newGLBalance = balanceService.updateGLBalance(

@@ -119,40 +119,72 @@ const TransactionForm = () => {
   });
 
   // Calculate totals dynamically - useMemo ensures instant updates
-  const { totalDebit, totalCredit, isBalanced } = useMemo(() => {
-    let debitTotal = 0;
-    let creditTotal = 0;
+  // ✅ FIX ISSUE 2: Calculate totals in correct currency (FCY for USD, LCY for BDT)
+  const { totalDebit, totalCredit, isBalanced, displayCurrency, totalDebitFcy, totalCreditFcy } = useMemo(() => {
+    let debitTotalLcy = 0;
+    let creditTotalLcy = 0;
+    let debitTotalFcy = 0;
+    let creditTotalFcy = 0;
 
     // Use watchedLines which updates on every field change
     const linesToCalculate = watchedLines || [];
     
+    // Check if all accounts are USD
+    const allAccountsUSD = linesToCalculate.length > 0 && linesToCalculate.every((line: any) => {
+      const balance = accountBalances.get(`${linesToCalculate.indexOf(line)}`);
+      return balance?.accountCcy === 'USD';
+    });
+    
     linesToCalculate.forEach((line: any) => {
-      // Parse the amount value, handling null, undefined, empty string, and NaN
-      const amount = parseFloat(String(line?.lcyAmt || 0));
-      const validAmount = isNaN(amount) ? 0 : amount;
+      // LCY amounts (always calculated for balance checking)
+      const lcyAmount = parseFloat(String(line?.lcyAmt || 0));
+      const validLcyAmount = isNaN(lcyAmount) ? 0 : lcyAmount;
+      
+      // FCY amounts (for USD transactions)
+      const fcyAmount = parseFloat(String(line?.fcyAmt || 0));
+      const validFcyAmount = isNaN(fcyAmount) ? 0 : fcyAmount;
       
       if (line?.drCrFlag === DrCrFlag.D) {
-        debitTotal += validAmount;
+        debitTotalLcy += validLcyAmount;
+        debitTotalFcy += validFcyAmount;
       } else if (line?.drCrFlag === DrCrFlag.C) {
-        creditTotal += validAmount;
+        creditTotalLcy += validLcyAmount;
+        creditTotalFcy += validFcyAmount;
       }
     });
 
     // Round to 2 decimal places for display
-    debitTotal = Math.round(debitTotal * 100) / 100;
-    creditTotal = Math.round(creditTotal * 100) / 100;
+    debitTotalLcy = Math.round(debitTotalLcy * 100) / 100;
+    creditTotalLcy = Math.round(creditTotalLcy * 100) / 100;
+    debitTotalFcy = Math.round(debitTotalFcy * 100) / 100;
+    creditTotalFcy = Math.round(creditTotalFcy * 100) / 100;
 
-    const balanced = Math.abs(debitTotal - creditTotal) < 0.01;
+    // Balance check is always on LCY
+    const balanced = Math.abs(debitTotalLcy - creditTotalLcy) < 0.01;
+
+    // Determine display currency
+    const currency = allAccountsUSD ? 'USD' : 'BDT';
 
     // Log for debugging
-    console.log('Totals calculated:', { debitTotal, creditTotal, balanced });
+    console.log('Totals calculated:', { 
+      debitTotalLcy, 
+      creditTotalLcy, 
+      debitTotalFcy, 
+      creditTotalFcy, 
+      balanced,
+      currency,
+      allAccountsUSD 
+    });
 
     return {
-      totalDebit: debitTotal,
-      totalCredit: creditTotal,
-      isBalanced: balanced
+      totalDebit: debitTotalLcy,
+      totalCredit: creditTotalLcy,
+      totalDebitFcy: debitTotalFcy,
+      totalCreditFcy: creditTotalFcy,
+      isBalanced: balanced,
+      displayCurrency: currency
     };
-  }, [watchedLines]);
+  }, [watchedLines, accountBalances]);
 
   // Set current date when available
   useEffect(() => {
@@ -202,6 +234,32 @@ const TransactionForm = () => {
       setAccountBalances(prev => new Map(prev).set(`${index}`, balanceData));
       setAccountOverdraftStatus(prev => new Map(prev).set(`${index}`, overdraftData.isOverdraftAccount));
       setAssetAccounts(prev => new Map(prev).set(`${index}`, isAssetAccount || false));
+      
+      // ✅ FIX ISSUE 3: Auto-set currency for USD accounts
+      const accountCurrency = balanceData.accountCcy || 'BDT';
+      if (accountCurrency === 'USD') {
+        // Lock to USD currency
+        setValue(`lines.${index}.tranCcy`, 'USD');
+        
+        // Fetch and set Mid Rate automatically
+        try {
+          const exchangeRateData = await getLatestExchangeRate('USD/BDT');
+          setExchangeRates(prev => new Map(prev).set(index, {
+            midRate: exchangeRateData.midRate,
+            buyingRate: exchangeRateData.buyingRate,
+            sellingRate: exchangeRateData.sellingRate
+          }));
+          
+          // Lock to Mid Rate for USD accounts
+          setRateTypes(prev => new Map(prev).set(index, 'mid'));
+          setValue(`lines.${index}.exchangeRate`, exchangeRateData.midRate);
+          
+          toast.info(`USD account detected - Currency locked to USD, Rate set to Mid Rate: ${exchangeRateData.midRate}`);
+        } catch (error) {
+          console.error('Failed to fetch exchange rate for USD account:', error);
+          toast.warning('USD account detected but failed to fetch exchange rate');
+        }
+      }
       
     } catch (error) {
       console.error(`Failed to fetch data for account ${accountNo}:`, error);
@@ -729,25 +787,39 @@ const TransactionForm = () => {
                     name={`lines.${index}.tranCcy`}
                     control={control}
                     rules={{ required: 'Currency is required' }}
-                    render={({ field }) => (
-                      <FormControl fullWidth error={!!errors.lines?.[index]?.tranCcy} disabled={isLoading}>
-                        <InputLabel id={`currency-label-${index}`}>Currency</InputLabel>
-                        <Select
-                          {...field}
-                          labelId={`currency-label-${index}`}
-                          label="Currency"
-                          onChange={(e) => {
-                            field.onChange(e);
-                            handleCurrencyChange(index, e.target.value);
-                          }}
-                        >
-                          {CURRENCIES.map(currency => (
-                            <MenuItem key={currency} value={currency}>{currency}</MenuItem>
-                          ))}
-                        </Select>
-                        <FormHelperText>{errors.lines?.[index]?.tranCcy?.message}</FormHelperText>
-                      </FormControl>
-                    )}
+                    render={({ field }) => {
+                      // ✅ FIX ISSUE 3: Lock currency for USD accounts
+                      const accountCurrency = accountBalances.get(`${index}`)?.accountCcy || 'BDT';
+                      const isUsdAccount = accountCurrency === 'USD';
+                      
+                      return (
+                        <FormControl fullWidth error={!!errors.lines?.[index]?.tranCcy} disabled={isLoading || isUsdAccount}>
+                          <InputLabel id={`currency-label-${index}`}>Currency</InputLabel>
+                          <Select
+                            {...field}
+                            labelId={`currency-label-${index}`}
+                            label="Currency"
+                            onChange={(e) => {
+                              field.onChange(e);
+                              handleCurrencyChange(index, e.target.value);
+                            }}
+                          >
+                            {isUsdAccount ? (
+                              // USD accounts: Only show USD
+                              <MenuItem value="USD">USD</MenuItem>
+                            ) : (
+                              // BDT accounts: Show all currencies
+                              CURRENCIES.map(currency => (
+                                <MenuItem key={currency} value={currency}>{currency}</MenuItem>
+                              ))
+                            )}
+                          </Select>
+                          <FormHelperText>
+                            {isUsdAccount ? '🔒 Locked to USD for this account' : errors.lines?.[index]?.tranCcy?.message}
+                          </FormHelperText>
+                        </FormControl>
+                      );
+                    }}
                   />
                 </Grid>
 
@@ -804,9 +876,14 @@ const TransactionForm = () => {
                   {(() => {
                     const rates = exchangeRates.get(index);
                     const currentRateType = rateTypes.get(index) || 'mid';
+                    // ✅ FIX ISSUE 3: Lock rate type to Mid Rate for USD accounts
+                    const accountCurrency = accountBalances.get(`${index}`)?.accountCcy || 'BDT';
+                    const isUsdAccount = accountCurrency === 'USD';
+                    const currency = watch(`lines.${index}.tranCcy`);
+                    const isCurrencyUsd = currency === 'USD';
 
                     return (
-                      <FormControl fullWidth disabled={isLoading || watch(`lines.${index}.tranCcy`) !== 'USD'}>
+                      <FormControl fullWidth disabled={isLoading || !isCurrencyUsd || isUsdAccount}>
                         <InputLabel id={`rate-type-label-${index}`}>Rate Type</InputLabel>
                         <Select
                           labelId={`rate-type-label-${index}`}
@@ -817,15 +894,21 @@ const TransactionForm = () => {
                           <MenuItem value="mid">
                             Mid Rate{rates ? ` (${rates.midRate.toFixed(4)})` : ''}
                           </MenuItem>
-                          <MenuItem value="buying">
-                            Buying Rate{rates ? ` (${rates.buyingRate.toFixed(4)})` : ''}
-                          </MenuItem>
-                          <MenuItem value="selling">
-                            Selling Rate{rates ? ` (${rates.sellingRate.toFixed(4)})` : ''}
-                          </MenuItem>
+                          {!isUsdAccount && (
+                            <>
+                              <MenuItem value="buying">
+                                Buying Rate{rates ? ` (${rates.buyingRate.toFixed(4)})` : ''}
+                              </MenuItem>
+                              <MenuItem value="selling">
+                                Selling Rate{rates ? ` (${rates.sellingRate.toFixed(4)})` : ''}
+                              </MenuItem>
+                            </>
+                          )}
                         </Select>
                         <FormHelperText>
-                          {watch(`lines.${index}.tranCcy`) === 'USD'
+                          {isUsdAccount 
+                            ? '🔒 Fixed to Mid Rate for USD accounts'
+                            : isCurrencyUsd
                             ? 'Select which rate to apply'
                             : 'Only available for USD'}
                         </FormHelperText>
@@ -968,6 +1051,7 @@ const TransactionForm = () => {
           </Box>
 
           {/* Transaction Totals - Updates Instantly as you type */}
+          {/* ✅ FIX ISSUE 2: Show amounts in correct currency (USD for USD accounts, BDT for BDT accounts) */}
           <Paper 
             variant="outlined" 
             sx={{ 
@@ -980,7 +1064,7 @@ const TransactionForm = () => {
             }}
           >
             <Typography variant="subtitle2" sx={{ mb: 2, color: 'text.secondary' }}>
-              Transaction Summary (Updates Instantly)
+              Transaction Summary (Updates Instantly) - {displayCurrency === 'USD' ? 'FCY Amounts (USD)' : 'LCY Amounts (BDT)'}
             </Typography>
             <Grid container spacing={2}>
               <Grid item xs={12} md={4}>
@@ -996,7 +1080,10 @@ const TransactionForm = () => {
                     transition: 'color 0.3s ease'
                   }}
                 >
-                  {totalDebit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BDT
+                  {displayCurrency === 'USD' 
+                    ? `${totalDebitFcy.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+                    : `${totalDebit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BDT`
+                  }
                 </Typography>
               </Grid>
               <Grid item xs={12} md={4}>
@@ -1012,7 +1099,10 @@ const TransactionForm = () => {
                     transition: 'color 0.3s ease'
                   }}
                 >
-                  {totalCredit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BDT
+                  {displayCurrency === 'USD'
+                    ? `${totalCreditFcy.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+                    : `${totalCredit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BDT`
+                  }
                 </Typography>
               </Grid>
               <Grid item xs={12} md={4}>
@@ -1028,11 +1118,20 @@ const TransactionForm = () => {
                     transition: 'color 0.3s ease'
                   }}
                 >
-                  {Math.abs(totalDebit - totalCredit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BDT
+                  {displayCurrency === 'USD'
+                    ? `${Math.abs(totalDebitFcy - totalCreditFcy).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+                    : `${Math.abs(totalDebit - totalCredit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BDT`
+                  }
                   {isBalanced && ' ✓'}
                 </Typography>
               </Grid>
             </Grid>
+            <Typography variant="caption" sx={{ mt: 1, display: 'block', color: 'text.secondary', fontStyle: 'italic' }}>
+              {displayCurrency === 'USD' 
+                ? 'Note: For USD accounts, amounts shown in USD. Balance checking uses LCY (BDT) equivalent.'
+                : 'Note: For BDT accounts, all amounts are in BDT (LCY = FCY).'
+              }
+            </Typography>
           </Paper>
 
           {!isBalanced && (

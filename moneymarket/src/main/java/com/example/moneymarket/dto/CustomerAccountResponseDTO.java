@@ -37,6 +37,11 @@ public class CustomerAccountResponseDTO {
     private Boolean interestBearing;        // Whether the account's product is interest-bearing
     private String productName;             // Product name
     
+    // ✅ FIX: Added missing fields for Account Details page
+    private String accountCcy;              // Account currency (USD, BDT, etc.) from Product
+    private BigDecimal interestRate;        // Interest rate from Sub-Product
+    private String makerId;                 // Created by (Maker ID) from cust_acct_master
+    
     // Message for UI display (e.g., confirmation messages)
     private String message;
 }

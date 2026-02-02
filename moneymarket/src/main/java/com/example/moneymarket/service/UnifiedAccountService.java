@@ -150,6 +150,60 @@ public class UnifiedAccountService {
     }
 
     /**
+     * ✅ FIX ISSUE 4: Get account currency from Product → SubProduct → Account hierarchy
+     * Currency flows: Product.currency → SubProduct (inherits) → Account (inherits)
+     * 
+     * @param accountNo The account number
+     * @return The account currency (USD, BDT, etc.)
+     * @throws BusinessException if account is not found
+     */
+    public String getAccountCurrency(String accountNo) {
+        // First try to find as customer account
+        CustAcctMaster custAccount = custAcctMasterRepository.findById(accountNo).orElse(null);
+        if (custAccount != null) {
+            // Get currency from account (which inherits from Product via SubProduct)
+            String currency = custAccount.getAccountCcy();
+            if (currency != null && !currency.isEmpty()) {
+                log.debug("Account {} currency: {} (from cust_acct_master)", accountNo, currency);
+                return currency;
+            }
+            
+            // Fallback: Get from SubProduct → Product
+            if (custAccount.getSubProduct() != null && custAccount.getSubProduct().getProduct() != null) {
+                currency = custAccount.getSubProduct().getProduct().getCurrency();
+                log.debug("Account {} currency: {} (from product hierarchy)", accountNo, currency);
+                return currency;
+            }
+            
+            log.warn("Account {} has no currency set, defaulting to BDT", accountNo);
+            return "BDT";
+        }
+
+        // If not found as customer account, try office account
+        OFAcctMaster ofAccount = ofAcctMasterRepository.findById(accountNo).orElse(null);
+        if (ofAccount != null) {
+            // Get currency from account
+            String currency = ofAccount.getAccountCcy();
+            if (currency != null && !currency.isEmpty()) {
+                log.debug("Office account {} currency: {} (from of_acct_master)", accountNo, currency);
+                return currency;
+            }
+            
+            // Fallback: Get from SubProduct → Product
+            if (ofAccount.getSubProduct() != null && ofAccount.getSubProduct().getProduct() != null) {
+                currency = ofAccount.getSubProduct().getProduct().getCurrency();
+                log.debug("Office account {} currency: {} (from product hierarchy)", accountNo, currency);
+                return currency;
+            }
+            
+            log.warn("Office account {} has no currency set, defaulting to BDT", accountNo);
+            return "BDT";
+        }
+
+        throw new BusinessException("Account " + accountNo + " does not exist");
+    }
+
+    /**
      * Check if an account exists (either customer or office)
      * 
      * @param accountNo The account number

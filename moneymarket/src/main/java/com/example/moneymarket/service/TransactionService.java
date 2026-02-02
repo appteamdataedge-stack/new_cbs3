@@ -68,17 +68,6 @@ public class TransactionService {
         // Validate transaction balance
         validateTransactionBalance(transactionRequestDTO);
 
-        // Validate all transactions using new business rules
-        for (TransactionLineDTO lineDTO : transactionRequestDTO.getLines()) {
-            try {
-                validationService.validateTransaction(
-                        lineDTO.getAccountNo(), lineDTO.getDrCrFlag(), lineDTO.getLcyAmt());
-            } catch (BusinessException e) {
-                throw new BusinessException("Transaction validation failed for account " +
-                        lineDTO.getAccountNo() + ": " + e.getMessage());
-            }
-        }
-
         // Generate a transaction ID
         String tranId = generateTransactionId();
         LocalDate tranDate = systemDateService.getSystemDate();
@@ -104,6 +93,37 @@ public class TransactionService {
             
             // Get account info for GL number
             unifiedAccountService.getAccountInfo(lineDTO.getAccountNo());
+            
+            // ✅ FIX ISSUE 4: Validate transaction currency matches account currency
+            String accountCurrency = unifiedAccountService.getAccountCurrency(lineDTO.getAccountNo());
+            String tranCurrency = lineDTO.getTranCcy();
+            
+            if (!accountCurrency.equals(tranCurrency)) {
+                throw new BusinessException(String.format(
+                    "Currency mismatch for account %s. Account currency: %s, Transaction currency: %s. " +
+                    "Transactions must be in the account's currency.",
+                    lineDTO.getAccountNo(), accountCurrency, tranCurrency
+                ));
+            }
+            
+            // For USD accounts, validate using FCY amount; for BDT accounts, validate using LCY amount
+            BigDecimal validationAmount;
+            if ("USD".equals(accountCurrency)) {
+                validationAmount = lineDTO.getFcyAmt();
+                log.debug("USD account {} - validating with FCY amount: {}", lineDTO.getAccountNo(), validationAmount);
+            } else {
+                validationAmount = lineDTO.getLcyAmt();
+                log.debug("BDT account {} - validating with LCY amount: {}", lineDTO.getAccountNo(), validationAmount);
+            }
+            
+            // Validate transaction with correct amount
+            try {
+                validationService.validateTransaction(
+                        lineDTO.getAccountNo(), lineDTO.getDrCrFlag(), validationAmount);
+            } catch (BusinessException e) {
+                throw new BusinessException("Transaction validation failed for account " +
+                        lineDTO.getAccountNo() + ": " + e.getMessage());
+            }
             
             // Create transaction record with Entry status
             String lineId = tranId + "-" + lineNumber++;
@@ -182,8 +202,24 @@ public class TransactionService {
         // Validate all transactions again before posting using new business rules
         for (TranTable transaction : transactions) {
             try {
+                // ✅ CRITICAL FIX: Use account currency to determine validation amount
+                String accountCurrency = unifiedAccountService.getAccountCurrency(transaction.getAccountNo());
+                BigDecimal validationAmount;
+                
+                if ("USD".equals(accountCurrency)) {
+                    // USD account: validate using FCY amount
+                    validationAmount = transaction.getFcyAmt();
+                    log.debug("Validating USD account {} with FCY amount: {} USD", 
+                            transaction.getAccountNo(), validationAmount);
+                } else {
+                    // BDT account: validate using LCY amount
+                    validationAmount = transaction.getLcyAmt();
+                    log.debug("Validating BDT account {} with LCY amount: {} BDT", 
+                            transaction.getAccountNo(), validationAmount);
+                }
+                
                 validationService.validateTransaction(
-                        transaction.getAccountNo(), transaction.getDrCrFlag(), transaction.getLcyAmt());
+                        transaction.getAccountNo(), transaction.getDrCrFlag(), validationAmount);
             } catch (BusinessException e) {
                 throw new BusinessException("Transaction validation failed for account " +
                         transaction.getAccountNo() + ": " + e.getMessage());
