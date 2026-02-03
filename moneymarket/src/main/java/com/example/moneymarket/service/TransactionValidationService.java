@@ -107,7 +107,7 @@ public class TransactionValidationService {
      * Exception: Overdraft accounts (Layer 3 GL_Num = 210201000 or 140101000) can go into negative balance
      * Asset Account Rules:
      *   1. Debit transactions cannot exceed (Available Balance + Loan Limit)
-     *   2. Asset accounts cannot have positive balances (credit balance)
+     *   2. UPDATED: Asset accounts CAN have positive balances (e.g., savings, deposits)
      */
     private boolean validateCustomerAccountTransaction(String accountNo, DrCrFlag drCrFlag, BigDecimal amount, 
                                                      LocalDate systemDate, UnifiedAccountService.AccountInfo accountInfo, 
@@ -121,7 +121,7 @@ public class TransactionValidationService {
             resultingBalance = currentBalance.add(amount);
         }
         
-        // ASSET CUSTOMER ACCOUNTS (GL starting with "2"): Dual validation
+        // ASSET CUSTOMER ACCOUNTS (GL starting with "2"): Validate debit transactions only
         if (accountInfo.isAssetAccount()) {
             // Rule 1: For DEBIT transactions, check against available balance (includes loan limit)
             if (drCrFlag == DrCrFlag.D) {
@@ -146,33 +146,13 @@ public class TransactionValidationService {
                         accountNo, accountInfo.getGlNum(), availableBalance, amount);
             }
             
-            // Rule 2: Resulting balance cannot be positive for LOAN/BORROWING asset accounts
-            // Note: Some asset accounts like Cash, Receivables can have positive balances
-            // Only LOAN accounts (GL 21xxxx) must maintain negative or zero balance
-            boolean isLoanAccount = accountInfo.getGlNum().startsWith("21");
-            
-            if (isLoanAccount && resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
-                log.warn("Customer Loan Account {} (GL: {}) - Cannot have positive balance. " +
-                        "Current: {} {}, Transaction: {} {} {}, Resulting: {} {}", 
-                        accountNo, accountInfo.getGlNum(), currentBalance, accountCurrency, 
-                        drCrFlag, amount, accountCurrency, resultingBalance, accountCurrency);
-                
-                throw new BusinessException(
-                    String.format("Loan Account %s (GL: %s) cannot have positive balance. " +
-                                "Current balance: %.2f %s, Transaction: %s %.2f %s would result in positive balance: %.2f %s. " +
-                                "Loan accounts can only have zero or negative balances (outstanding loans).",
-                                accountNo, accountInfo.getGlNum(), currentBalance, accountCurrency,
-                                drCrFlag, amount, accountCurrency, resultingBalance, accountCurrency)
-                );
-            }
-            
-            log.debug("Customer Asset Account {} (GL: {}) - Balance check: Current: {} {}, Resulting: {} {} ({})",
-                    accountNo, accountInfo.getGlNum(), currentBalance, accountCurrency, 
-                    resultingBalance, accountCurrency, 
-                    isLoanAccount ? "Loan account - negative/zero required" : "Other asset - positive allowed");
+            // REMOVED RESTRICTION: Asset accounts can now have positive balances
+            // This allows savings accounts, deposit accounts, Nostro accounts, etc. to hold positive balances
+            // Previous validation that blocked positive balances for loan accounts has been removed
             
             log.info("Customer Asset Account {} (GL: {}) - All validations passed. " +
-                    "Resulting balance: {} (zero or negative)", accountNo, accountInfo.getGlNum(), resultingBalance);
+                    "Resulting balance: {} (both positive and negative balances allowed)", 
+                    accountNo, accountInfo.getGlNum(), resultingBalance);
             return true;
         }
         
@@ -213,9 +193,9 @@ public class TransactionValidationService {
      * Business Rules (Based on GL Code Classification):
      * 
      * 1. ASSET Office Accounts (GL starting with "2"):
-     *    - Cannot have positive balance (can go to 0 but not exceed 0)
+     *    - UPDATED: Can have positive balances (e.g., Nostro accounts with deposits)
      *    - Can go negative (debit balances are normal for assets)
-     *    - Validates against positive balance only
+     *    - No balance restrictions applied
      * 
      * 2. LIABILITY Office Accounts (GL starting with "1"):
      *    - MUST validate balance
@@ -223,34 +203,22 @@ public class TransactionValidationService {
      *    - Requires sufficient balance before transaction
      * 
      * This conditional validation allows proper accounting flexibility:
-     * - Asset accounts can handle negative balances but not positive
+     * - Asset accounts can handle both positive and negative balances
      * - Liability accounts maintain obligation integrity
      */
     private boolean validateOfficeAccountTransaction(String accountNo, DrCrFlag drCrFlag, BigDecimal amount, 
                                                    BigDecimal resultingBalance, UnifiedAccountService.AccountInfo accountInfo) {
         String glNum = accountInfo.getGlNum();
         
-        // ASSET OFFICE ACCOUNTS (GL starting with "2"): Cannot have positive balance
+        // ASSET OFFICE ACCOUNTS (GL starting with "2"): Allow both positive and negative balances
         if (accountInfo.isAssetAccount()) {
-            if (resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
-                log.warn("Office Asset Account {} (GL: {}) - Cannot have positive balance. " +
-                        "Current: {}, Transaction: {} {}, Resulting: {}", 
-                        accountNo, glNum, 
-                        resultingBalance.subtract(drCrFlag == DrCrFlag.D ? amount.negate() : amount),
-                        drCrFlag, amount, resultingBalance);
-                
-                throw new BusinessException(
-                    String.format("Asset Account %s (GL: %s) cannot have positive balance. " +
-                                "Current balance: %s, Transaction: %s %s would result in positive balance: %s. " +
-                                "Asset accounts can only have zero or negative balances.",
-                                accountNo, glNum,
-                                resultingBalance.subtract(drCrFlag == DrCrFlag.D ? amount.negate() : amount),
-                                drCrFlag, amount, resultingBalance)
-                );
-            }
+            // REMOVED RESTRICTION: Asset accounts can now have positive balances
+            // This allows Nostro accounts, Cash accounts, etc. to hold positive balances
+            // Previous validation that blocked positive balances has been removed
             
             log.info("Office Asset Account {} (GL: {}) - Balance validation passed. " +
-                    "Resulting balance: {} (zero or negative allowed)", accountNo, glNum, resultingBalance);
+                    "Resulting balance: {} (both positive and negative balances allowed)", 
+                    accountNo, glNum, resultingBalance);
             return true;
         }
         

@@ -145,11 +145,20 @@ public class AccountBalanceUpdateService {
         // Calculate Closing_Bal: Closing_Bal = Opening_Bal + CR_Summation - DR_Summation
         BigDecimal closingBal = openingBal.add(crSummation).subtract(drSummation);
         
+        // ✅ FIX: Get account currency from BOTH customer and office account tables
+        // This ensures NOSTRO and other office accounts get correct currency (USD, not BDT)
+        String accountCurrency = custAcctMasterRepository.findById(accountNo)
+                .map(acct -> acct.getAccountCcy())
+                .orElseGet(() -> ofAcctMasterRepository.findById(accountNo)
+                        .map(acct -> acct.getAccountCcy())
+                        .orElse("BDT")); // Default to BDT only if account not found in either table
+        
         // Insert/Update record in Acct_Bal (INSERT ... ON DUPLICATE KEY UPDATE pattern)
         AcctBal accountBalance;
         if (existingRecord.isPresent()) {
-            // Update existing record
+            // ✅ FIX: Update existing record AND preserve/correct Account_Ccy
             accountBalance = existingRecord.get();
+            accountBalance.setAccountCcy(accountCurrency); // ← FIX: Ensure currency matches account master
             accountBalance.setOpeningBal(openingBal);
             accountBalance.setDrSummation(drSummation);
             accountBalance.setCrSummation(crSummation);
@@ -158,17 +167,14 @@ public class AccountBalanceUpdateService {
             accountBalance.setAvailableBalance(closingBal);
             // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
             accountBalance.setLastUpdated(systemDateService.getSystemDateTime());
-            log.debug("Updating existing EOD record for account: {} on date: {}", accountNo, systemDate);
+            log.debug("Updating existing EOD record for account: {} on date: {} with currency: {}", 
+                    accountNo, systemDate, accountCurrency);
         } else {
-            // Insert new record - get account currency from cust_acct_master
-            String accountCurrency = custAcctMasterRepository.findById(accountNo)
-                    .map(acct -> acct.getAccountCcy())
-                    .orElse("BDT"); // Default to BDT if account not found
-
+            // ✅ FIX: Insert new record with correct currency from account master (customer OR office)
             accountBalance = AcctBal.builder()
                     .tranDate(systemDate)
                     .accountNo(accountNo)
-                    .accountCcy(accountCurrency)
+                    .accountCcy(accountCurrency) // ← Already includes office accounts now
                     .openingBal(openingBal)
                     .drSummation(drSummation)
                     .crSummation(crSummation)
@@ -178,7 +184,8 @@ public class AccountBalanceUpdateService {
                     // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
                     .lastUpdated(systemDateService.getSystemDateTime())
                     .build();
-            log.debug("Creating new EOD record for account: {} (currency: {}) on date: {}", accountNo, accountCurrency, systemDate);
+            log.debug("Creating new EOD record for account: {} (currency: {}) on date: {}", 
+                    accountNo, accountCurrency, systemDate);
         }
         
         acctBalRepository.save(accountBalance);
