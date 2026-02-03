@@ -436,15 +436,20 @@ const TransactionForm = () => {
 
   // Submit handler
   const onSubmit = (data: TransactionRequestDTO) => {
-    // Validate all amounts are greater than 0
-    const invalidLines = data.lines.filter(line => !line.lcyAmt || line.lcyAmt <= 0);
+    // ✅ CRITICAL FIX: Validate amounts based on account currency
+    const invalidLines = data.lines.filter((line, index) => {
+      const balance = accountBalances.get(`${index}`);
+      const accountCurrency = balance?.accountCcy || 'BDT';
+      const amount = accountCurrency === 'USD' ? line.fcyAmt : line.lcyAmt;
+      return !amount || amount <= 0;
+    });
+    
     if (invalidLines.length > 0) {
       toast.error('All lines must have an amount greater than zero');
       return;
     }
 
-    // Validate debit transactions don't exceed available balance 
-    // (except for overdraft accounts and Asset Office Accounts)
+    // ✅ CRITICAL FIX: Validate debit transactions using account currency
     for (let i = 0; i < data.lines.length; i++) {
       const line = data.lines[i];
       if (line.drCrFlag === DrCrFlag.D) {
@@ -455,14 +460,20 @@ const TransactionForm = () => {
         // Skip balance validation for:
         // 1. Overdraft accounts (can go negative by design)
         // 2. Asset Accounts (GL starting with "2" - no validation required for negative balance)
-        if (!isOverdraftAccount && !isAssetAccount && balance && line.lcyAmt > balance.computedBalance) {
-          toast.error(`Insufficient balance for account ${line.accountNo}. Available: ${balance.computedBalance.toFixed(2)} BDT, Requested: ${line.lcyAmt} BDT`);
-          return;
+        if (!isOverdraftAccount && !isAssetAccount && balance) {
+          const accountCurrency = balance.accountCcy || 'BDT';
+          const transactionAmount = accountCurrency === 'USD' ? line.fcyAmt : line.lcyAmt;
+          const availableBalance = balance.computedBalance;
+          
+          if (transactionAmount > availableBalance) {
+            toast.error(`Insufficient balance for account ${line.accountNo}. Available: ${availableBalance.toFixed(2)} ${accountCurrency}, Requested: ${transactionAmount.toFixed(2)} ${accountCurrency}`);
+            return;
+          }
         }
       }
     }
 
-    // Validate asset accounts cannot have positive balance
+    // ✅ CRITICAL FIX: Validate asset accounts using account currency
     for (let i = 0; i < data.lines.length; i++) {
       const line = data.lines[i];
       const balance = accountBalances.get(`${i}`);
@@ -470,28 +481,35 @@ const TransactionForm = () => {
       
       // Check if this is an asset account (GL starting with '2')
       if (isAssetAccount && balance) {
+        const accountCurrency = balance.accountCcy || 'BDT';
+        const transactionAmount = accountCurrency === 'USD' ? line.fcyAmt : line.lcyAmt;
         let resultingBalance = balance.computedBalance;
         
         // Calculate resulting balance after this transaction
         if (line.drCrFlag === DrCrFlag.D) {
-          resultingBalance -= line.lcyAmt;
+          resultingBalance -= transactionAmount;
         } else {
-          resultingBalance += line.lcyAmt;
+          resultingBalance += transactionAmount;
         }
         
-        // Asset accounts cannot have positive balance
-        if (resultingBalance > 0) {
-          toast.error(`Asset account ${line.accountNo} cannot have positive balance. Current: ${balance.computedBalance.toFixed(2)} BDT, Transaction: ${line.drCrFlag} ${line.lcyAmt} BDT would result in positive balance: ${resultingBalance.toFixed(2)} BDT. Asset accounts can only have zero or negative balances.`);
+        // Asset accounts cannot have positive balance (only for loan accounts - GL 21xxxx)
+        const selectedAccount = allAccounts.find(acc => acc.accountNo === line.accountNo);
+        const isLoanAccount = selectedAccount?.glNum?.startsWith('21');
+        
+        if (isLoanAccount && resultingBalance > 0) {
+          toast.error(`Loan account ${line.accountNo} cannot have positive balance. Current: ${balance.computedBalance.toFixed(2)} ${accountCurrency}, Transaction: ${line.drCrFlag} ${transactionAmount.toFixed(2)} ${accountCurrency} would result in positive balance: ${resultingBalance.toFixed(2)} ${accountCurrency}. Loan accounts can only have zero or negative balances.`);
           return;
         }
       }
     }
 
-    // Calculate totals manually to ensure precision
+    // ✅ CRITICAL FIX: Calculate totals in LCY for backend validation
+    // BUT use account currency for frontend display
     let debitTotal = 0;
     let creditTotal = 0;
     
     data.lines.forEach(line => {
+      // Backend expects LCY totals to be balanced
       const amount = parseFloat(String(line.lcyAmt));
       if (line.drCrFlag === DrCrFlag.D) {
         debitTotal += amount;
@@ -511,9 +529,9 @@ const TransactionForm = () => {
       isBalanced: debitTotal === creditTotal
     });
 
-    // Ensure debit equals credit before submitting
+    // Ensure debit equals credit before submitting (LCY must balance)
     if (debitTotal !== creditTotal) {
-      toast.error(`Transaction is not balanced. Debit: ${debitTotal} BDT, Credit: ${creditTotal} BDT`);
+      toast.error(`Transaction is not balanced. Debit: ${debitTotal.toFixed(2)} BDT, Credit: ${creditTotal.toFixed(2)} BDT`);
       return;
     }
 
