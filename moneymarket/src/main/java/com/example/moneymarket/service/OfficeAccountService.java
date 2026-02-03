@@ -49,21 +49,42 @@ public class OfficeAccountService {
             throw new BusinessException("Sub-Product is not active");
         }
 
+        // ✅ FIX: Get currency from Product (via SubProduct relationship)
+        // This ensures NOSTRO USD (NSUSD) gets currency = 'USD', not default 'BDT'
+        String accountCurrency = null;
+        if (subProduct.getProduct() != null) {
+            accountCurrency = subProduct.getProduct().getCurrency();
+            log.info("Office account currency retrieved from Product: {} for sub-product: {}", 
+                    accountCurrency, subProduct.getSubProductCode());
+        }
+        
+        // Validate currency was found
+        if (accountCurrency == null || accountCurrency.isEmpty()) {
+            log.error("Currency not found for sub-product: {} (ID: {})", 
+                    subProduct.getSubProductCode(), subProduct.getSubProductId());
+            throw new BusinessException(
+                String.format("Cannot create office account: Currency not configured for sub-product %s. " +
+                            "Please ensure the Product has a valid currency configured.",
+                            subProduct.getSubProductCode()));
+        }
+
         // Generate office account number using the new format
         String glNum = subProduct.getCumGLNum();
         String accountNo = accountNumberService.generateOfficeAccountNumber(glNum);
 
-        // Map DTO to entity
-        OFAcctMaster account = mapToEntity(accountRequestDTO, subProduct, accountNo, glNum);
+        // Map DTO to entity with currency
+        OFAcctMaster account = mapToEntity(accountRequestDTO, subProduct, accountNo, glNum, accountCurrency);
 
         // Save the account
         OFAcctMaster savedAccount = ofAcctMasterRepository.save(account);
         
-        // Initialize account balance (Acct_Bal & opening row for daily master if required)
+        // ✅ FIX: Initialize account balance with correct currency from Product
+        // This fixes the "Column 'Account_Ccy' cannot be null" error
         AcctBal accountBalance = AcctBal.builder()
                 // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
                 .tranDate(systemDateService.getSystemDate()) // Required field for composite primary key
                 .accountNo(savedAccount.getAccountNo()) // Required field for composite primary key
+                .accountCcy(accountCurrency) // ✅ FIX: Set currency from Product (USD for NSUSD)
                 .currentBalance(BigDecimal.ZERO)
                 .availableBalance(BigDecimal.ZERO)
                 .lastUpdated(systemDateService.getSystemDateTime())
@@ -71,7 +92,8 @@ public class OfficeAccountService {
         
         acctBalRepository.save(accountBalance);
 
-        log.info("Office Account created with account number: {}", savedAccount.getAccountNo());
+        log.info("✅ Office Account created successfully - Account: {}, Currency: {}, Sub-Product: {}", 
+                savedAccount.getAccountNo(), accountCurrency, subProduct.getSubProductCode());
 
         // Return the response
         return mapToResponse(savedAccount);
@@ -174,14 +196,21 @@ public class OfficeAccountService {
      * @param subProduct The sub-product
      * @param accountNo The account number
      * @param glNum The GL number
+     * @param accountCurrency The account currency from Product
      * @return The entity
      */
     private OFAcctMaster mapToEntity(OfficeAccountRequestDTO dto, SubProdMaster subProduct, 
-                                     String accountNo, String glNum) {
+                                     String accountNo, String glNum, String accountCurrency) {
+        log.info("Creating office account {} with currency: {} from product: {} ({})", 
+                accountNo, accountCurrency, 
+                subProduct.getProduct().getProductName(), 
+                subProduct.getProduct().getProductCode());
+        
         return OFAcctMaster.builder()
                 .accountNo(accountNo)
                 .subProduct(subProduct)
                 .glNum(glNum)
+                .accountCcy(accountCurrency) // ✅ FIX: Set currency from Product, not default BDT
                 .acctName(dto.getAcctName())
                 .dateOpening(dto.getDateOpening())
                 .dateClosure(dto.getDateClosure())
