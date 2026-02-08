@@ -20,5 +20,6 @@ public class AccountDetailsDTO {
     private String glNum;
     private String productName;
     private String branchId;
+    private String currency; // ✅ ISSUE 2 FIX: Currency from Product master (USD, BDT, EUR, etc.)
 }
 

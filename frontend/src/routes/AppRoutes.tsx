@@ -20,6 +20,7 @@ import TransactionForm from '../pages/transactions/TransactionForm';
 import { InterestCapitalizationList, InterestCapitalizationDetails } from '../pages/interestCapitalization';
 import ExchangeRateManagement from '../pages/exchange-rates/ExchangeRateManagement';
 import StatementOfAccounts from '../pages/StatementOfAccounts';
+import StatementOfGL from '../pages/StatementOfGL';
 import SettlementReports from '../pages/SettlementReports';
 import EOD from '../pages/admin/EOD';
 import BOD from '../pages/admin/BOD';
@@ -126,6 +127,9 @@ const AppRoutes = () => {
 
         {/* Statement of Accounts */}
         <Route path="/statement-of-accounts" element={<StatementOfAccounts />} />
+
+        {/* Statement of GL */}
+        <Route path="/statement-of-gl" element={<StatementOfGL />} />
 
         {/* Settlement Reports */}
         <Route path="/settlement-reports" element={<SettlementReports />} />

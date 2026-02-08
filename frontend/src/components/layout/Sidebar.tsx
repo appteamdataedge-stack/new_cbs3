@@ -63,6 +63,7 @@ const Sidebar = ({ open, onToggle }: SidebarProps) => {
     { name: 'Interest Capitalization', path: '/interest-capitalization', icon: <AccountBalanceWalletIcon /> },
     { name: 'Exchange Rates', path: '/exchange-rates', icon: <CurrencyExchangeIcon /> },
     { name: 'Statement of Accounts', path: '/statement-of-accounts', icon: <DescriptionIcon /> },
+    { name: 'Statement of GL', path: '/statement-of-gl', icon: <DescriptionIcon /> },
     { name: 'Settlement Reports', path: '/settlement-reports', icon: <AssessmentIcon /> },
     { name: 'System Date', path: '/admin/system-date', icon: <CalendarTodayIcon /> },
     { name: 'BOD', path: '/admin/bod', icon: <SettingsIcon /> },

@@ -27,6 +27,7 @@ public class OFAcctMaster {
     @Column(name = "GL_Num", nullable = false, length = 20)
     private String glNum;
 
+    @Builder.Default
     @Column(name = "Account_Ccy", length = 3, nullable = false)
     private String accountCcy = "BDT";
 

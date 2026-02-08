@@ -26,6 +26,7 @@ public class AcctBalAccrual {
     @JoinColumn(name = "Account_No", nullable = false)
     private CustAcctMaster account;
 
+    @Builder.Default
     @Column(name = "Tran_Ccy", length = 3, nullable = false)
     private String tranCcy = "BDT";
 

@@ -130,6 +130,7 @@ public class StatementOfAccountsService {
 
     /**
      * Get account details for SOA header
+     * ✅ ISSUE 2 FIX: Now includes currency from Product master
      */
     private AccountDetailsDTO getAccountDetails(String accountNo) {
         // Try customer account first
@@ -150,12 +151,16 @@ public class StatementOfAccountsService {
             }
             String productName = "";
             String glNum = "";
+            String currency = "BDT"; // Default currency
 
             if (account.getSubProduct() != null) {
                 SubProdMaster subProduct = account.getSubProduct();
                 glNum = subProduct.getCumGLNum();
                 if (subProduct.getProduct() != null) {
-                    productName = subProduct.getProduct().getProductName();
+                    ProdMaster product = subProduct.getProduct();
+                    productName = product.getProductName();
+                    // ✅ ISSUE 2 FIX: Get currency from Product master
+                    currency = product.getCurrency() != null ? product.getCurrency() : "BDT";
                 }
             }
 
@@ -167,6 +172,7 @@ public class StatementOfAccountsService {
                     .glNum(glNum)
                     .productName(productName)
                     .branchId(account.getBranchCode())
+                    .currency(currency)
                     .build();
         }
 
@@ -176,12 +182,16 @@ public class StatementOfAccountsService {
             OFAcctMaster account = officeAccount.get();
             String productName = "";
             String glNum = "";
+            String currency = "BDT"; // Default currency
 
             if (account.getSubProduct() != null) {
                 SubProdMaster subProduct = account.getSubProduct();
                 glNum = subProduct.getCumGLNum();
                 if (subProduct.getProduct() != null) {
-                    productName = subProduct.getProduct().getProductName();
+                    ProdMaster product = subProduct.getProduct();
+                    productName = product.getProductName();
+                    // ✅ ISSUE 2 FIX: Get currency from Product master
+                    currency = product.getCurrency() != null ? product.getCurrency() : "BDT";
                 }
             }
 
@@ -193,6 +203,7 @@ public class StatementOfAccountsService {
                     .glNum(glNum)
                     .productName(productName)
                     .branchId(account.getBranchCode())
+                    .currency(currency)
                     .build();
         }
 
@@ -250,14 +261,14 @@ public class StatementOfAccountsService {
             // Write column headers
             rowNum = writeColumnHeaders(sheet, columnHeaderStyle, rowNum);
 
-            // Write data rows
-            rowNum = writeDataRows(sheet, transactions, dataStyle, amountStyle, dateStyle, rowNum);
+            // Write data rows (pass accountDetails to access currency)
+            rowNum = writeDataRows(sheet, transactions, accountDetails, dataStyle, amountStyle, dateStyle, rowNum);
 
             // Write footer section
             writeFooterSection(sheet, openingBalance, closingBalance, transactions, boldStyle, amountStyle, rowNum);
 
-            // Auto-size columns
-            for (int i = 0; i < 7; i++) {
+            // Auto-size columns (updated to 8 columns to include Currency)
+            for (int i = 0; i < 8; i++) {
                 sheet.autoSizeColumn(i);
                 sheet.setColumnWidth(i, sheet.getColumnWidth(i) + 1000); // Add padding
             }
@@ -345,7 +356,8 @@ public class StatementOfAccountsService {
      */
     private int writeColumnHeaders(Sheet sheet, CellStyle columnHeaderStyle, int rowNum) {
         Row headerRow = sheet.createRow(rowNum++);
-        String[] headers = {"Date", "Value Date", "Transaction ID", "Narration", "Debit", "Credit", "Balance"};
+        // ✅ CRITICAL FIX: Add Currency column to display transaction currency
+        String[] headers = {"Date", "Value Date", "Transaction ID", "Narration", "Currency", "Debit", "Credit", "Balance"};
         for (int i = 0; i < headers.length; i++) {
             Cell cell = headerRow.createCell(i);
             cell.setCellValue(headers[i]);
@@ -356,9 +368,13 @@ public class StatementOfAccountsService {
 
     /**
      * Write data rows
+     * ✅ ISSUE 2 FIX: Now uses currency from AccountDetailsDTO (Product master) instead of transaction.getCurrencyCode()
      */
-    private int writeDataRows(Sheet sheet, List<TxnHistAcct> transactions, CellStyle dataStyle,
-                               CellStyle amountStyle, CellStyle dateStyle, int rowNum) {
+    private int writeDataRows(Sheet sheet, List<TxnHistAcct> transactions, AccountDetailsDTO accountDetails,
+                               CellStyle dataStyle, CellStyle amountStyle, CellStyle dateStyle, int rowNum) {
+        // ✅ ISSUE 2 FIX: Get currency from Account → SubProduct → Product hierarchy
+        String accountCurrency = accountDetails.getCurrency() != null ? accountDetails.getCurrency() : "BDT";
+        
         for (TxnHistAcct transaction : transactions) {
             Row dataRow = sheet.createRow(rowNum++);
 
@@ -382,8 +398,14 @@ public class StatementOfAccountsService {
             narrationCell.setCellValue(transaction.getNarration() != null ? transaction.getNarration() : "");
             narrationCell.setCellStyle(dataStyle);
 
+            // ✅ ISSUE 2 FIX: Display currency from Product master (not from transaction.getCurrencyCode())
+            // This ensures USD accounts show "USD" and BDT accounts show "BDT" consistently
+            Cell currencyCell = dataRow.createCell(4);
+            currencyCell.setCellValue(accountCurrency);
+            currencyCell.setCellStyle(dataStyle);
+
             // Debit
-            Cell debitCell = dataRow.createCell(4);
+            Cell debitCell = dataRow.createCell(5);
             if (transaction.getTranType() == TxnHistAcct.TransactionType.D) {
                 debitCell.setCellValue(formatAmount(transaction.getTranAmt()));
             } else {
@@ -392,7 +414,7 @@ public class StatementOfAccountsService {
             debitCell.setCellStyle(amountStyle);
 
             // Credit
-            Cell creditCell = dataRow.createCell(5);
+            Cell creditCell = dataRow.createCell(6);
             if (transaction.getTranType() == TxnHistAcct.TransactionType.C) {
                 creditCell.setCellValue(formatAmount(transaction.getTranAmt()));
             } else {
@@ -401,7 +423,7 @@ public class StatementOfAccountsService {
             creditCell.setCellStyle(amountStyle);
 
             // Balance (BALANCE_AFTER_TRAN)
-            Cell balanceCell = dataRow.createCell(6);
+            Cell balanceCell = dataRow.createCell(7);
             balanceCell.setCellValue(formatAmount(transaction.getBalanceAfterTran()));
             balanceCell.setCellStyle(amountStyle);
         }

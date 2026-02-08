@@ -38,6 +38,29 @@ public interface GLMovementRepository extends JpaRepository<GLMovement, Long> {
     List<String> findDistinctGLNumbersByTranDate(@Param("tranDate") LocalDate tranDate);
 
     /**
+     * Get unique GL numbers from GL movement records for a date range
+     * Used for GL Statement generation
+     *
+     * @param fromDate Start date (inclusive)
+     * @param toDate End date (inclusive)
+     * @return List of unique GL numbers
+     */
+    @Query(value = "SELECT DISTINCT GL_Num FROM gl_movement WHERE Tran_Date BETWEEN :fromDate AND :toDate", nativeQuery = true)
+    List<String> findDistinctGLNumbersByTranDateBetween(@Param("fromDate") LocalDate fromDate, 
+                                                         @Param("toDate") LocalDate toDate);
+
+    /**
+     * Find GL movements by GL number and date range
+     * Used for GL Statement generation
+     *
+     * @param glNum The GL account number
+     * @param fromDate Start date (inclusive)
+     * @param toDate End date (inclusive)
+     * @return List of GL movements
+     */
+    List<GLMovement> findByGlSetup_GlNumAndTranDateBetween(String glNum, LocalDate fromDate, LocalDate toDate);
+
+    /**
      * FIX: Native query to calculate DR/CR summation without joining GLSetup table
      * This prevents Hibernate duplicate-row assertion errors when GL_Num is not unique
      *

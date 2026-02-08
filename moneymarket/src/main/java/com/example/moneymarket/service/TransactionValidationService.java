@@ -193,33 +193,62 @@ public class TransactionValidationService {
      * Business Rules (Based on GL Code Classification):
      * 
      * 1. ASSET Office Accounts (GL starting with "2"):
-     *    - UPDATED: Can have positive balances (e.g., Nostro accounts with deposits)
-     *    - Can go negative (debit balances are normal for assets)
-     *    - No balance restrictions applied
+     *    - DEBIT: Unlimited, can go to any negative value (no balance check)
+     *    - CREDIT: Can only credit up to zero, balance must NEVER be positive
+     *    - Balance must be <= 0 at all times (zero or negative)
+     *    - Examples: Nostro accounts, Cash Teller accounts, etc.
      * 
      * 2. LIABILITY Office Accounts (GL starting with "1"):
      *    - MUST validate balance
      *    - Cannot go into negative (debit) balance
      *    - Requires sufficient balance before transaction
      * 
-     * This conditional validation allows proper accounting flexibility:
-     * - Asset accounts can handle both positive and negative balances
-     * - Liability accounts maintain obligation integrity
+     * FIXED: Corrected the backwards logic for Asset Office Accounts
+     * - Previous logic was BLOCKING debits (wrong!)
+     * - Previous logic was ALLOWING credits that create positive balances (wrong!)
+     * - New logic: ALLOWS all debits, RESTRICTS credits to prevent positive balances
      */
     private boolean validateOfficeAccountTransaction(String accountNo, DrCrFlag drCrFlag, BigDecimal amount, 
                                                    BigDecimal resultingBalance, UnifiedAccountService.AccountInfo accountInfo) {
         String glNum = accountInfo.getGlNum();
         
-        // ASSET OFFICE ACCOUNTS (GL starting with "2"): Allow both positive and negative balances
+        // Get account currency for error messages
+        String accountCurrency = unifiedAccountService.getAccountCurrency(accountNo);
+        BigDecimal currentBalance = resultingBalance.add(drCrFlag == DrCrFlag.D ? amount : amount.negate());
+        
+        // ASSET OFFICE ACCOUNTS (GL starting with "2")
         if (accountInfo.isAssetAccount()) {
-            // REMOVED RESTRICTION: Asset accounts can now have positive balances
-            // This allows Nostro accounts, Cash accounts, etc. to hold positive balances
-            // Previous validation that blocked positive balances has been removed
+            // ✅ FIXED: Correct validation for ALL Office Asset Accounts
             
-            log.info("Office Asset Account {} (GL: {}) - Balance validation passed. " +
-                    "Resulting balance: {} (both positive and negative balances allowed)", 
-                    accountNo, glNum, resultingBalance);
-            return true;
+            // DEBIT: Always allow (no balance check, can go infinitely negative)
+            if (drCrFlag == DrCrFlag.D) {
+                log.info("Office Asset Account {} (GL: {}) - DEBIT transaction allowed. " +
+                        "Current: {} {}, Debit: {} {}, Resulting: {} {} (can go to any negative value)", 
+                        accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
+                return true;
+            }
+            
+            // CREDIT: Only allow if resulting balance <= 0 (cannot go positive)
+            if (drCrFlag == DrCrFlag.C) {
+                if (resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
+                    log.warn("Office Asset Account {} (GL: {}) - CREDIT REJECTED. " +
+                            "Current: {} {}, Credit: {} {}, Resulting: {} {}. " +
+                            "Office Asset Accounts cannot have positive balances.", 
+                            accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
+                    
+                    throw new BusinessException(
+                        String.format("Credit rejected for Office Asset Account %s (GL: %s). " +
+                                    "Current balance: %.2f %s, Credit amount: %.2f %s, Resulting balance: %.2f %s. " +
+                                    "Office Asset Accounts can only be credited up to zero balance. Cannot have positive balances.",
+                                    accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency)
+                    );
+                }
+                
+                log.info("Office Asset Account {} (GL: {}) - CREDIT transaction allowed. " +
+                        "Current: {} {}, Credit: {} {}, Resulting: {} {} (at or below zero)", 
+                        accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
+                return true;
+            }
         }
         
         // LIABILITY OFFICE ACCOUNTS (GL starting with "1"): APPLY strict validation

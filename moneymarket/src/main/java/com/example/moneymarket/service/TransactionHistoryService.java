@@ -48,7 +48,20 @@ public class TransactionHistoryService {
             LocalDate valueDate = transaction.getValueDate();
             String tranId = transaction.getTranId();
             String narration = transaction.getNarration();
-            BigDecimal tranAmt = transaction.getLcyAmt();
+            
+            // ✅ CRITICAL FIX: Use transaction currency (not hardcoded BDT)
+            String tranCcy = transaction.getTranCcy();
+            
+            // ✅ CRITICAL FIX: Use correct amount based on currency
+            // For FCY transactions (USD, EUR, etc.): Use FCY_Amt
+            // For BDT transactions: Use LCY_Amt (same as FCY_Amt for BDT)
+            BigDecimal tranAmt;
+            if ("BDT".equals(tranCcy)) {
+                tranAmt = transaction.getLcyAmt();
+            } else {
+                tranAmt = transaction.getFcyAmt();
+            }
+            
             TranTable.DrCrFlag drCrFlag = transaction.getDrCrFlag();
 
             // Step 2: Determine Account Type and Get Details
@@ -93,15 +106,18 @@ public class TransactionHistoryService {
         histRecord.setBalanceAfterTran(balanceAfterTran);
         histRecord.setEntryUserId(transaction.getUdf1() != null ? transaction.getUdf1() : "SYSTEM");
         histRecord.setAuthUserId(verifierUserId);
-        histRecord.setCurrencyCode("BDT");
+        
+        // ✅ CRITICAL FIX: Use transaction currency instead of hardcoded "BDT"
+        histRecord.setCurrencyCode(tranCcy);
+        
         histRecord.setGlNum(accountDetails.glNum);
         histRecord.setRcreDate(systemDateService.getSystemDate());
         histRecord.setRcreTime(LocalTime.now());
 
         // Step 7: Save Record
         txnHistAcctRepository.save(histRecord);
-        log.info("Transaction history created successfully for account {}, Tran_ID {}, Opening Balance: {}, Transaction Amount: {} ({}), New Balance: {}",
-                accountNo, tranId, openingBalance, tranAmt, tranType, balanceAfterTran);
+        log.info("Transaction history created successfully for account {}, Tran_ID {}, Currency: {}, Opening Balance: {} {}, Transaction Amount: {} {} ({}), New Balance: {} {}",
+                accountNo, tranId, tranCcy, openingBalance, tranCcy, tranAmt, tranCcy, tranType, balanceAfterTran, tranCcy);
 
         } catch (Exception e) {
             // Step 8: Handle Errors - Log warning but don't fail transaction verification

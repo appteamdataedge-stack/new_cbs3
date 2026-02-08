@@ -27,6 +27,7 @@ public class AcctBal {
     @Column(name = "Account_No", length = 13, nullable = false)
     private String accountNo;
 
+    @Builder.Default
     @Column(name = "Account_Ccy", length = 3, nullable = false)
     private String accountCcy = "BDT";
 
