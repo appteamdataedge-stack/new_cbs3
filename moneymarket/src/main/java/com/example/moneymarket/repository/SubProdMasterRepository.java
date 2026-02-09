@@ -41,4 +41,12 @@ public interface SubProdMasterRepository extends JpaRepository<SubProdMaster, In
      */
     @Query("SELECT sp FROM SubProdMaster sp WHERE sp.subProductStatus = 'Active' ORDER BY sp.subProductCode")
     List<SubProdMaster> findAllActiveSubProducts();
+
+    /**
+     * Find all active subproducts with product relationship loaded for reconciliation
+     *
+     * @return List of active subproducts with products
+     */
+    @Query("SELECT sp FROM SubProdMaster sp JOIN FETCH sp.product WHERE sp.subProductStatus = 'Active' ORDER BY sp.subProductCode")
+    List<SubProdMaster> findAllActiveSubProductsWithProduct();
 }

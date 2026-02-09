@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sub-Product GL Balance Reconciliation Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            align-items: flex-end;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .form-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status-message {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loader.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .drill-down-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .drill-down-section.active {
+            display: block;
+        }
+
+        .drill-down-header {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .drill-down-header h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+
+        .info-item label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .info-item value {
+            display: block;
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        table th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+        }
+
+        table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .amount {
+            text-align: right;
+            font-family: 'Courier New', monospace;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge.matched {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-badge.unmatched {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin: 30px 0 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .back-btn {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Sub-Product GL Balance Reconciliation Report</h1>
+            <p>EOD Step 8 - Compare Sub-Product Account Balances vs GL Balances</p>
+        </div>
+
+        <div class="content">
+            <!-- Status Message -->
+            <div id="statusMessage" class="status-message"></div>
+
+            <!-- Loader -->
+            <div id="loader" class="loader">
+                <div class="spinner"></div>
+                <p>Generating report, please wait...</p>
+            </div>
+
+            <!-- Main Controls -->
+            <div id="mainControls">
+                <div class="controls">
+                    <div class="form-group">
+                        <label for="reportDate">Report Date</label>
+                        <input type="date" id="reportDate" />
+                    </div>
+                    <button class="btn btn-primary" onclick="generateReport()">
+                        <span>📊</span> Generate Report
+                    </button>
+                    <button class="btn btn-secondary" onclick="testDrillDown()">
+                        <span>🔍</span> Test Drill-Down
+                    </button>
+                </div>
+
+                <div class="info-grid" style="margin-top: 20px;">
+                    <div class="info-item">
+                        <label>Report Features</label>
+                        <value>✓ Multi-Currency Support (FCY)</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Reconciliation Type</label>
+                        <value>Sub-Product vs GL</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Output Format</label>
+                        <value>Excel (.xlsx)</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Drill-Down Available</label>
+                        <value>✓ Account & GL Details</value>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Drill-Down Section -->
+            <div id="drillDownSection" class="drill-down-section">
+                <button class="btn btn-secondary back-btn" onclick="closeDrillDown()">
+                    ← Back to Main
+                </button>
+
+                <div class="drill-down-header">
+                    <h3 id="drillDownTitle">Drill-Down Details</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <label>Sub-Product Code</label>
+                            <value id="ddSubProductCode">-</value>
+                        </div>
+                        <div class="info-item">
+                            <label>Sub-Product Name</label>
+                            <value id="ddSubProductName">-</value>
+                        </div>
+                        <div class="info-item">
+                            <label>GL Number</label>
+                            <value id="ddGLNum">-</value>
+                        </div>
+                        <div class="info-item">
+                            <label>Report Date</label>
+                            <value id="ddReportDate">-</value>
+                        </div>
+                        <div class="info-item">
+                            <label>Total Account Balance</label>
+                            <value id="ddTotalAcctBal" class="amount">-</value>
+                        </div>
+                        <div class="info-item">
+                            <label>GL Balance</label>
+                            <value id="ddGLBal" class="amount">-</value>
+                        </div>
+                        <div class="info-item">
+                            <label>Difference</label>
+                            <value id="ddDifference" class="amount">-</value>
+                        </div>
+                        <div class="info-item">
+                            <label>FCY Accounts</label>
+                            <value id="ddFCY">-</value>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Account Balances Table -->
+                <h4 class="section-title">Account Balances</h4>
+                <table id="accountsTable">
+                    <thead>
+                        <tr>
+                            <th>Account No</th>
+                            <th>Account Name</th>
+                            <th>Type</th>
+                            <th>Currency</th>
+                            <th class="amount">Balance (LCY)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountsTableBody">
+                    </tbody>
+                </table>
+
+                <!-- GL Postings Table -->
+                <h4 class="section-title">GL Postings</h4>
+                <table id="glPostingsTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Transaction ID</th>
+                            <th>Description</th>
+                            <th class="amount">Debit</th>
+                            <th class="amount">Credit</th>
+                            <th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody id="glPostingsTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8080/api/subproduct-gl-reconciliation';
+
+        // Set default date to today
+        document.getElementById('reportDate').valueAsDate = new Date();
+
+        function showMessage(message, type) {
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message ${type}`;
+            statusMessage.style.display = 'block';
+
+            setTimeout(() => {
+                statusMessage.style.display = 'none';
+            }, 5000);
+        }
+
+        function showLoader() {
+            document.getElementById('loader').classList.add('active');
+        }
+
+        function hideLoader() {
+            document.getElementById('loader').classList.remove('active');
+        }
+
+        async function generateReport() {
+            const reportDate = document.getElementById('reportDate').value;
+            
+            if (!reportDate) {
+                showMessage('Please select a report date', 'error');
+                return;
+            }
+
+            showLoader();
+
+            try {
+                const url = `${API_BASE_URL}/generate?reportDate=${reportDate}`;
+                const response = await fetch(url, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Failed to generate report');
+                }
+
+                // Download the file
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = `SubProduct_GL_Reconciliation_${reportDate}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                a.remove();
+
+                showMessage('Report generated and downloaded successfully!', 'success');
+            } catch (error) {
+                console.error('Error generating report:', error);
+                showMessage(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoader();
+            }
+        }
+
+        async function getDrillDownDetails(subProductCode) {
+            const reportDate = document.getElementById('reportDate').value;
+            
+            if (!reportDate) {
+                showMessage('Please select a report date', 'error');
+                return;
+            }
+
+            if (!subProductCode) {
+                showMessage('Please enter a sub-product code', 'error');
+                return;
+            }
+
+            showLoader();
+
+            try {
+                const url = `${API_BASE_URL}/drill-down/${subProductCode}?reportDate=${reportDate}`;
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Failed to fetch drill-down details');
+                }
+
+                const data = await response.json();
+                displayDrillDownDetails(data);
+                
+                // Show drill-down section, hide main controls
+                document.getElementById('mainControls').style.display = 'none';
+                document.getElementById('drillDownSection').classList.add('active');
+
+                showMessage('Drill-down details loaded successfully!', 'success');
+            } catch (error) {
+                console.error('Error fetching drill-down details:', error);
+                showMessage(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoader();
+            }
+        }
+
+        function displayDrillDownDetails(data) {
+            // Update header info
+            document.getElementById('ddSubProductCode').textContent = data.subProductCode;
+            document.getElementById('ddSubProductName').textContent = data.subProductName;
+            document.getElementById('ddGLNum').textContent = data.glNum;
+            document.getElementById('ddReportDate').textContent = data.reportDate;
+            document.getElementById('ddTotalAcctBal').textContent = formatAmount(data.totalAccountBalance);
+            document.getElementById('ddGLBal').textContent = formatAmount(data.glBalance);
+            document.getElementById('ddDifference').textContent = formatAmount(data.difference);
+            document.getElementById('ddFCY').textContent = data.fcyAccountsExist ? data.fcyBalances : 'None';
+
+            // Populate accounts table
+            const accountsTableBody = document.getElementById('accountsTableBody');
+            accountsTableBody.innerHTML = '';
+            
+            if (data.accountBalances && data.accountBalances.length > 0) {
+                data.accountBalances.forEach(account => {
+                    const row = accountsTableBody.insertRow();
+                    row.innerHTML = `
+                        <td>${account.accountNo}</td>
+                        <td>${account.accountName}</td>
+                        <td>${account.accountType}</td>
+                        <td>${account.currency}</td>
+                        <td class="amount">${formatAmount(account.lcyBalance)}</td>
+                    `;
+                });
+            } else {
+                const row = accountsTableBody.insertRow();
+                row.innerHTML = '<td colspan="5" style="text-align: center;">No accounts found</td>';
+            }
+
+            // Populate GL postings table
+            const glPostingsTableBody = document.getElementById('glPostingsTableBody');
+            glPostingsTableBody.innerHTML = '';
+            
+            if (data.glPostings && data.glPostings.length > 0) {
+                data.glPostings.forEach(posting => {
+                    const row = glPostingsTableBody.insertRow();
+                    row.innerHTML = `
+                        <td>${posting.date}</td>
+                        <td>${posting.tranId}</td>
+                        <td>${posting.description}</td>
+                        <td class="amount">${formatAmount(posting.debit)}</td>
+                        <td class="amount">${formatAmount(posting.credit)}</td>
+                        <td>${posting.source}</td>
+                    `;
+                });
+            } else {
+                const row = glPostingsTableBody.insertRow();
+                row.innerHTML = '<td colspan="6" style="text-align: center;">No GL postings found</td>';
+            }
+        }
+
+        function closeDrillDown() {
+            document.getElementById('mainControls').style.display = 'block';
+            document.getElementById('drillDownSection').classList.remove('active');
+        }
+
+        function testDrillDown() {
+            const subProductCode = prompt('Enter Sub-Product Code for drill-down:');
+            if (subProductCode) {
+                getDrillDownDetails(subProductCode.trim());
+            }
+        }
+
+        function formatAmount(amount) {
+            if (amount === null || amount === undefined) {
+                return '0.00';
+            }
+            return parseFloat(amount).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Health check on load
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Service health:', data);
+                }
+            } catch (error) {
+                console.warn('Service health check failed:', error);
+                showMessage('Warning: Unable to connect to reconciliation service', 'error');
+            }
+        }
+
+        // Check health on page load
+        checkHealth();
+    </script>
+</body>
+</html>

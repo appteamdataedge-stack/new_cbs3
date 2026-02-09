@@ -6,6 +6,7 @@ C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\service\Custo
 C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\repository\GLMovementAccrualRepositoryNativeQueryTest.java
 C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\service\MultiCurrencyTransactionServiceTest.java
 C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\integration\SettlementAuditIntegrationTest.java
+C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\service\SubProductGLReconciliationServiceTest.java
 C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\controller\MultiCurrencyTransactionControllerTest.java
 C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\controller\TransactionControllerTest.java
 C:\new_cbs3\cbs3\moneymarket\src\test\java\com\example\moneymarket\repository\GLMovementRepositoryNativeQueryTest.java

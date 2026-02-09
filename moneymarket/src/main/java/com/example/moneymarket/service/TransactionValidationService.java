@@ -82,22 +82,13 @@ public class TransactionValidationService {
         AcctBal balance = acctBalRepository.findLatestByAccountNo(accountNo)
                 .orElseThrow(() -> new BusinessException("Balance for account " + accountNo + " not found"));
         
-        // Calculate resulting balance after transaction
-        // IMPORTANT: Balance is always in account's currency (USD for USD accounts, BDT for BDT accounts)
-        BigDecimal currentBalance = balance.getCurrentBalance();
-        BigDecimal resultingBalance;
-        
-        if (drCrFlag == DrCrFlag.D) {
-            resultingBalance = currentBalance.subtract(amount);
-        } else {
-            resultingBalance = currentBalance.add(amount);
-        }
-        
         // Apply different validation rules based on account type
         if (accountInfo.isCustomerAccount()) {
             return validateCustomerAccountTransaction(accountNo, drCrFlag, amount, systemDate, accountInfo, balance, accountCurrency);
         } else {
-            return validateOfficeAccountTransaction(accountNo, drCrFlag, amount, resultingBalance, accountInfo);
+            // ✅ CRITICAL FIX: Office accounts must use AVAILABLE_BALANCE, not current_balance
+            // Pass the balance object so office account validation can access available_balance
+            return validateOfficeAccountTransaction(accountNo, drCrFlag, amount, balance, accountInfo, accountCurrency);
         }
     }
 
@@ -203,18 +194,65 @@ public class TransactionValidationService {
      *    - Cannot go into negative (debit) balance
      *    - Requires sufficient balance before transaction
      * 
-     * FIXED: Corrected the backwards logic for Asset Office Accounts
-     * - Previous logic was BLOCKING debits (wrong!)
-     * - Previous logic was ALLOWING credits that create positive balances (wrong!)
-     * - New logic: ALLOWS all debits, RESTRICTS credits to prevent positive balances
+     * CRITICAL FIX: Now calculates REAL-TIME AVAILABLE BALANCE from opening + today's transactions
+     * - Office accounts must calculate available_balance dynamically (same as customer accounts)
+     * - Available balance = Opening + Today's Credits - Today's Debits
+     * - Cannot use stored available_balance as it's stale (set only during EOD)
      */
     private boolean validateOfficeAccountTransaction(String accountNo, DrCrFlag drCrFlag, BigDecimal amount, 
-                                                   BigDecimal resultingBalance, UnifiedAccountService.AccountInfo accountInfo) {
+                                                   AcctBal balance, UnifiedAccountService.AccountInfo accountInfo,
+                                                   String accountCurrency) {
         String glNum = accountInfo.getGlNum();
         
-        // Get account currency for error messages
-        String accountCurrency = unifiedAccountService.getAccountCurrency(accountNo);
-        BigDecimal currentBalance = resultingBalance.add(drCrFlag == DrCrFlag.D ? amount : amount.negate());
+        // ✅ CRITICAL FIX: Calculate REAL-TIME available balance (do NOT use stored value!)
+        // The stored available_balance is only updated during EOD and doesn't include today's transactions
+        // Must calculate: Available = Opening + Today's Credits - Today's Debits
+        LocalDate systemDate = systemDateService.getSystemDate();
+        
+        // Get opening balance (previous day's closing)
+        BigDecimal openingBalance = accountBalanceUpdateService.getPreviousDayClosingBalance(accountNo, systemDate);
+        
+        // Get today's transactions
+        BigDecimal todayDebits;
+        BigDecimal todayCredits;
+        
+        if ("BDT".equals(accountCurrency)) {
+            // BDT account: Sum LCY amounts
+            todayDebits = tranTableRepository.sumDebitTransactionsForAccountOnDate(accountNo, systemDate)
+                    .orElse(BigDecimal.ZERO);
+            todayCredits = tranTableRepository.sumCreditTransactionsForAccountOnDate(accountNo, systemDate)
+                    .orElse(BigDecimal.ZERO);
+        } else {
+            // FCY account (USD, etc.): Sum FCY amounts
+            List<com.example.moneymarket.entity.TranTable> transactions = 
+                    tranTableRepository.findByAccountNoAndTranDate(accountNo, systemDate);
+            
+            todayDebits = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == com.example.moneymarket.entity.TranTable.DrCrFlag.D)
+                    .map(com.example.moneymarket.entity.TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            todayCredits = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == com.example.moneymarket.entity.TranTable.DrCrFlag.C)
+                    .map(com.example.moneymarket.entity.TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        
+        // Calculate real-time available balance
+        BigDecimal availableBalance = openingBalance.add(todayCredits).subtract(todayDebits);
+        
+        // Calculate resulting balance after this transaction
+        BigDecimal resultingBalance;
+        if (drCrFlag == DrCrFlag.D) {
+            resultingBalance = availableBalance.subtract(amount);
+        } else {
+            resultingBalance = availableBalance.add(amount);
+        }
+        
+        log.info("Office Account {} (GL: {}) - Validation using REAL-TIME AVAILABLE BALANCE. " +
+                "Opening: {} {}, Today's Debits: {} {}, Today's Credits: {} {}, Available: {} {}, Transaction: {} {}, Resulting: {} {}", 
+                accountNo, glNum, openingBalance, accountCurrency, todayDebits, accountCurrency, todayCredits, accountCurrency, 
+                availableBalance, accountCurrency, drCrFlag, amount, accountCurrency, resultingBalance, accountCurrency);
         
         // ASSET OFFICE ACCOUNTS (GL starting with "2")
         if (accountInfo.isAssetAccount()) {
@@ -223,8 +261,8 @@ public class TransactionValidationService {
             // DEBIT: Always allow (no balance check, can go infinitely negative)
             if (drCrFlag == DrCrFlag.D) {
                 log.info("Office Asset Account {} (GL: {}) - DEBIT transaction allowed. " +
-                        "Current: {} {}, Debit: {} {}, Resulting: {} {} (can go to any negative value)", 
-                        accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
+                        "Available: {} {}, Debit: {} {}, Resulting: {} {} (can go to any negative value)", 
+                        accountNo, glNum, availableBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
                 return true;
             }
             
@@ -232,21 +270,21 @@ public class TransactionValidationService {
             if (drCrFlag == DrCrFlag.C) {
                 if (resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
                     log.warn("Office Asset Account {} (GL: {}) - CREDIT REJECTED. " +
-                            "Current: {} {}, Credit: {} {}, Resulting: {} {}. " +
+                            "Available: {} {}, Credit: {} {}, Resulting: {} {}. " +
                             "Office Asset Accounts cannot have positive balances.", 
-                            accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
+                            accountNo, glNum, availableBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
                     
                     throw new BusinessException(
                         String.format("Credit rejected for Office Asset Account %s (GL: %s). " +
-                                    "Current balance: %.2f %s, Credit amount: %.2f %s, Resulting balance: %.2f %s. " +
+                                    "Available balance: %.2f %s, Credit amount: %.2f %s, Resulting balance: %.2f %s. " +
                                     "Office Asset Accounts can only be credited up to zero balance. Cannot have positive balances.",
-                                    accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency)
+                                    accountNo, glNum, availableBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency)
                     );
                 }
                 
                 log.info("Office Asset Account {} (GL: {}) - CREDIT transaction allowed. " +
-                        "Current: {} {}, Credit: {} {}, Resulting: {} {} (at or below zero)", 
-                        accountNo, glNum, currentBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
+                        "Available: {} {}, Credit: {} {}, Resulting: {} {} (at or below zero)", 
+                        accountNo, glNum, availableBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
                 return true;
             }
         }
@@ -256,23 +294,25 @@ public class TransactionValidationService {
             // Liability accounts cannot go into negative (debit) balance
             if (resultingBalance.compareTo(BigDecimal.ZERO) < 0) {
                 log.warn("Office Liability Account {} (GL: {}) - Insufficient balance. " +
-                        "Current: {}, Transaction: {} {}, Resulting: {}", 
+                        "Available: {} {}, Transaction: {} {}, Resulting: {} {}", 
                         accountNo, glNum, 
-                        resultingBalance.subtract(drCrFlag == DrCrFlag.D ? amount.negate() : amount),
-                        drCrFlag, amount, resultingBalance);
+                        availableBalance, accountCurrency,
+                        drCrFlag, amount, accountCurrency, resultingBalance, accountCurrency);
                 
                 throw new BusinessException(
                     String.format("Insufficient balance for Office Liability Account %s (GL: %s). " +
-                                "Available balance: %s, Required: %s. " +
+                                "Available balance: %.2f %s, Transaction: %s %.2f %s, Resulting: %.2f %s. " +
                                 "Liability accounts cannot have negative balances.",
                                 accountNo, glNum,
-                                resultingBalance.subtract(drCrFlag == DrCrFlag.D ? amount.negate() : amount),
-                                amount)
+                                availableBalance, accountCurrency,
+                                drCrFlag, amount, accountCurrency,
+                                resultingBalance, accountCurrency)
                 );
             }
             
             log.info("Office Liability Account {} (GL: {}) - Balance validation passed. " +
-                    "Resulting balance: {}", accountNo, glNum, resultingBalance);
+                    "Available: {} {}, Resulting: {} {}", 
+                    accountNo, glNum, availableBalance, accountCurrency, resultingBalance, accountCurrency);
             return true;
         }
         
@@ -280,11 +320,13 @@ public class TransactionValidationService {
         // Apply conservative validation: prevent negative balances
         if (resultingBalance.compareTo(BigDecimal.ZERO) < 0) {
             log.warn("Office Account {} (GL: {}) of unknown type - Cannot go negative. " +
-                    "Resulting balance would be: {}", accountNo, glNum, resultingBalance);
+                    "Available: {} {}, Resulting: {} {}", 
+                    accountNo, glNum, availableBalance, accountCurrency, resultingBalance, accountCurrency);
             throw new BusinessException(
                 String.format("Insufficient balance for Office Account %s (GL: %s). " +
-                            "Resulting balance would be negative: %s",
-                            accountNo, glNum, resultingBalance)
+                            "Available balance: %.2f %s, Resulting balance would be: %.2f %s. " +
+                            "Cannot have negative balances.",
+                            accountNo, glNum, availableBalance, accountCurrency, resultingBalance, accountCurrency)
             );
         }
         

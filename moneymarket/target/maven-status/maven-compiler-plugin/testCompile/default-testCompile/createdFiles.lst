@@ -13,4 +13,5 @@ com\example\moneymarket\repository\GLMovementAccrualRepositoryNativeQueryTest.cl
 com\example\moneymarket\controller\TransactionControllerTest$TestConfig$1.class
 com\example\moneymarket\integration\SettlementAuditIntegrationTest.class
 com\example\moneymarket\service\GLHierarchyServiceTest.class
+com\example\moneymarket\service\SubProductGLReconciliationServiceTest.class
 com\example\moneymarket\service\EODOrchestrationServiceTest.class
