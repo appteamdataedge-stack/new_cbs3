@@ -59,6 +59,7 @@ com\example\moneymarket\entity\InterestRateMaster.class
 com\example\moneymarket\dto\ProductResponseDTO$ProductResponseDTOBuilder.class
 com\example\moneymarket\service\GLReconciliationService$GLPostingDetail$GLPostingDetailBuilder.class
 com\example\moneymarket\service\SettlementReportService$AccountSettlementReport$AccountSettlementReportBuilder.class
+com\example\moneymarket\repository\AcctBalLcyRepository.class
 com\example\moneymarket\repository\TranValueDateLogRepository.class
 com\example\moneymarket\service\ValueDatePostingService.class
 com\example\moneymarket\service\SettlementReportService$DailySettlementReport.class
@@ -180,6 +181,7 @@ com\example\moneymarket\service\SettlementReportService$DailySettlementReport$Da
 com\example\moneymarket\entity\SettlementGainLoss$SettlementGainLossBuilder.class
 com\example\moneymarket\service\ValueDateValidationService.class
 com\example\moneymarket\repository\InterestRateMasterRepository.class
+com\example\moneymarket\entity\AcctBalLcy$AcctBalLcyBuilder.class
 com\example\moneymarket\service\TransactionHistoryService.class
 com\example\moneymarket\dto\AccountDetailsDTO$AccountDetailsDTOBuilder.class
 com\example\moneymarket\entity\SettlementGainLoss.class
@@ -213,8 +215,10 @@ com\example\moneymarket\service\UnifiedAccountService.class
 com\example\moneymarket\service\CustomerIdService$1.class
 com\example\moneymarket\repository\AcctBalAccrualRepository.class
 com\example\moneymarket\dto\MultiCurrencyTransactionRequest.class
+com\example\moneymarket\entity\AcctBalLcyId.class
 com\example\moneymarket\service\InterestCapitalizationService.class
 com\example\moneymarket\validation\CustomerAccountValidator.class
+com\example\moneymarket\service\AccountBalanceUpdateService$DRCRSummation.class
 com\example\moneymarket\service\EODJobManagementService$EODJobResult.class
 com\example\moneymarket\dto\ProductResponseDTO.class
 com\example\moneymarket\entity\TranValueDateLog$TranValueDateLogBuilder.class
@@ -251,6 +255,7 @@ com\example\moneymarket\entity\OFAcctMaster.class
 com\example\moneymarket\entity\SubProdMaster$SubProductStatus.class
 com\example\moneymarket\controller\ExchangeRateController.class
 com\example\moneymarket\entity\EODLogTable.class
+com\example\moneymarket\entity\AcctBalLcy.class
 com\example\moneymarket\entity\CurrencyMaster$CurrencyMasterBuilder.class
 com\example\moneymarket\dto\GLStatementLineDTO$GLStatementLineDTOBuilder.class
 com\example\moneymarket\repository\GLMovementRepository.class

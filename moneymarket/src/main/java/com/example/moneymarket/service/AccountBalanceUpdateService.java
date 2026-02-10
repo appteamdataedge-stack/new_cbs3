@@ -1,357 +1,541 @@
 package com.example.moneymarket.service;
 
-import com.example.moneymarket.entity.AcctBal;
-import com.example.moneymarket.entity.TranTable;
-import com.example.moneymarket.repository.AcctBalRepository;
-import com.example.moneymarket.repository.CustAcctMasterRepository;
-import com.example.moneymarket.repository.OFAcctMasterRepository;
-import com.example.moneymarket.repository.TranTableRepository;
-import lombok.RequiredArgsConstructor;
+import com.example.moneymarket.entity.*;
+import com.example.moneymarket.exception.BusinessException;
+import com.example.moneymarket.repository.*;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.stream.Collectors;
+import java.util.*;
 
 /**
- * Service for Account Balance Update batch job (EOD Batch Job 1)
+ * Service for Batch Job 1: Account Balance Update (EOD)
  * 
- * Logic as per specification:
- * FOR EACH unique Account_No in Tran_Table where Tran_Date = System_Date:
- * 1. Get previous day's Closing_Bal as Opening_Bal (if Opening_Bal is not null then do not need to use below logics)
- * 2. If no previous record, Opening_Bal = 0
- * 3. Calculate DR_Summation: Sum of LCY_Amt where Dr_Cr_Flag = 'D' and Tran_Status = 'Verified'
- * 4. Calculate CR_Summation: Sum of LCY_Amt where Dr_Cr_Flag = 'C' and Tran_Status = 'Verified'
- * 5. Calculate Closing_Bal: Closing_Bal = Opening_Bal + CR_Summation - DR_Summation
- * 6. Insert/Update record in Acct_Bal with composite primary key (Tran_Date, Account_No)
+ * Updates account balances from Tran_Table entries for both:
+ * 1. Acct_Bal - balances in original account currency
+ * 2. Acct_Bal_LCY - balances converted to BDT (Local Currency)
  * 
- * Validation: Verify all accounts with transactions have been updated
+ * Process Flow:
+ * 1. Get all accounts from Cust_Acct_Master
+ * 2. For each account:
+ *    a. Get Opening_Bal from previous day's Closing_Bal
+ *    b. Calculate DR_Summation from Tran_Table (0 if no transactions)
+ *    c. Calculate CR_Summation from Tran_Table (0 if no transactions)
+ *    d. Calculate Closing_Bal = Opening_Bal + CR_Summation - DR_Summation
+ *    e. Insert/Update acct_bal with original currency amounts
+ *    f. Convert all amounts to BDT and insert/update acct_bal_lcy
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AccountBalanceUpdateService {
 
     private final AcctBalRepository acctBalRepository;
-    private final TranTableRepository tranTableRepository;
+    private final AcctBalLcyRepository acctBalLcyRepository;
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final OFAcctMasterRepository ofAcctMasterRepository;
+    private final TranTableRepository tranTableRepository;
     private final SystemDateService systemDateService;
-    private final ValueDateInterestService valueDateInterestService;
+    private final ExchangeRateService exchangeRateService;
+
+    // Self-reference for Spring AOP proxy
+    private final AccountBalanceUpdateService self;
+
+    // EntityManager for clearing persistence context
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    public AccountBalanceUpdateService(
+            AcctBalRepository acctBalRepository,
+            AcctBalLcyRepository acctBalLcyRepository,
+            CustAcctMasterRepository custAcctMasterRepository,
+            OFAcctMasterRepository ofAcctMasterRepository,
+            TranTableRepository tranTableRepository,
+            SystemDateService systemDateService,
+            ExchangeRateService exchangeRateService,
+            @org.springframework.context.annotation.Lazy AccountBalanceUpdateService self) {
+        this.acctBalRepository = acctBalRepository;
+        this.acctBalLcyRepository = acctBalLcyRepository;
+        this.custAcctMasterRepository = custAcctMasterRepository;
+        this.ofAcctMasterRepository = ofAcctMasterRepository;
+        this.tranTableRepository = tranTableRepository;
+        this.systemDateService = systemDateService;
+        this.exchangeRateService = exchangeRateService;
+        this.self = self;
+    }
 
     /**
-     * Execute Account Balance Update batch job (EOD Batch Job 1)
+     * Batch Job 1: Account Balance Update (EOD)
      * 
-     * @param systemDate The system date to process
+     * Updates both acct_bal and acct_bal_lcy tables
+     * 
+     * @param systemDate The system date for processing
      * @return Number of accounts processed
      */
-    @Transactional
+    @Transactional(noRollbackFor = {DataIntegrityViolationException.class})
     public int executeAccountBalanceUpdate(LocalDate systemDate) {
-        log.info("Starting EOD Account Balance Update for date: {}", systemDate);
-        
-        // Get all unique account numbers that have transactions on the system date
-        List<String> accountsWithTransactions = tranTableRepository.findByTranDateBetween(systemDate, systemDate)
-                .stream()
-                .map(TranTable::getAccountNo)
-                .distinct()
-                .collect(Collectors.toList());
-        
-        if (accountsWithTransactions.isEmpty()) {
-            log.info("No accounts with transactions found for EOD processing on date: {}", systemDate);
+        LocalDate processDate = systemDate != null ? systemDate : systemDateService.getSystemDate();
+        log.info("Starting Batch Job 1: Account Balance Update for date: {}", processDate);
+
+        // Step 1: Get all customer and office accounts
+        List<CustAcctMaster> customerAccounts = custAcctMasterRepository.findAll();
+        List<OFAcctMaster> officeAccounts = ofAcctMasterRepository.findAll();
+
+        if (customerAccounts.isEmpty() && officeAccounts.isEmpty()) {
+            log.warn("No customer or office accounts found");
             return 0;
         }
-        
-        int processedCount = 0;
-        int errorCount = 0;
-        
-        for (String accountNo : accountsWithTransactions) {
-            try {
-                processAccountBalance(accountNo, systemDate);
-                processedCount++;
-                log.debug("Processed EOD balance for account: {} on date: {}", accountNo, systemDate);
-            } catch (Exception e) {
-                errorCount++;
-                log.error("Error processing EOD balance for account: {} on date: {}", accountNo, systemDate, e);
-                // Continue processing other accounts instead of failing the entire batch
-                // Don't re-throw the exception to avoid marking the transaction as rollback-only
+
+        List<String> accountNumbers = new ArrayList<>();
+        customerAccounts.forEach(account -> accountNumbers.add(account.getAccountNo()));
+        officeAccounts.forEach(account -> accountNumbers.add(account.getAccountNo()));
+
+        log.info("Found {} customer accounts and {} office accounts to process (total: {})",
+                customerAccounts.size(), officeAccounts.size(), accountNumbers.size());
+
+        int recordsProcessed = 0;
+        List<String> errors = new ArrayList<>();
+        List<String> failedAccounts = new ArrayList<>();
+
+        // Step 2: Process each account with retry logic
+        for (String accountNo : accountNumbers) {
+            boolean success = false;
+            int attempts = 0;
+            final int MAX_ATTEMPTS = 3;
+
+            while (!success && attempts < MAX_ATTEMPTS) {
+                attempts++;
+                try {
+                    // Clear entity manager to prevent session cache issues
+                    entityManager.flush();
+                    entityManager.clear();
+
+                    self.processAccountBalanceInNewTransaction(accountNo, processDate);
+                    recordsProcessed++;
+                    success = true;
+
+                    if (attempts > 1) {
+                        log.info("Account {} processed successfully on attempt {}", accountNo, attempts);
+                    }
+
+                } catch (DataIntegrityViolationException e) {
+                    log.warn("Duplicate key error for Account {} on attempt {}: {}", accountNo, attempts, e.getMessage());
+
+                    if (attempts < MAX_ATTEMPTS) {
+                        // Cleanup: Delete the duplicate record and retry
+                        try {
+                            self.cleanupDuplicateAccountBalance(accountNo, processDate);
+                            log.info("Cleaned up duplicate record for Account {}, retrying...", accountNo);
+                        } catch (Exception cleanupEx) {
+                            log.error("Failed to cleanup duplicate for Account {}: {}", accountNo, cleanupEx.getMessage());
+                        }
+                    } else {
+                        log.error("Failed to process Account {} after {} attempts due to duplicate key", accountNo, MAX_ATTEMPTS);
+                        errors.add(String.format("Account %s: Duplicate key after %d attempts", accountNo, MAX_ATTEMPTS));
+                        failedAccounts.add(accountNo);
+                    }
+
+                } catch (Exception e) {
+                    log.error("Error processing account balance for Account {} on attempt {}: {}", accountNo, attempts, e.getMessage());
+
+                    if (attempts >= MAX_ATTEMPTS) {
+                        errors.add(String.format("Account %s: %s", accountNo, e.getMessage()));
+                        failedAccounts.add(accountNo);
+                    }
+                }
             }
         }
-        
-        log.info("EOD Account Balance Update completed. Processed: {}, Errors: {}, Total Accounts with Transactions: {} for date: {}",
-                processedCount, errorCount, accountsWithTransactions.size(), systemDate);
 
-        if (errorCount > 0) {
-            log.warn("EOD processing completed with {} errors out of {} accounts", errorCount, accountsWithTransactions.size());
+        log.info("Batch Job 1 processed {} accounts", recordsProcessed);
+
+        if (!errors.isEmpty()) {
+            log.warn("Account balance update completed with {} errors: {}",
+                    errors.size(), String.join("; ", errors));
+            log.warn("Failed accounts: {}", String.join(", ", failedAccounts));
         }
 
-        // If there were errors but we still processed some accounts, that's acceptable
-        // Only fail the entire transaction if no accounts were processed at all
-        if (processedCount == 0 && errorCount > 0) {
-            throw new RuntimeException("Failed to process any accounts during EOD balance update");
-        }
-
-        // Process value date interest accrual after account balance update
-        log.info("Starting value date interest accrual processing for date: {}", systemDate);
-        try {
-            int valueDateRecords = valueDateInterestService.processValueDateInterest(systemDate);
-            log.info("Value date interest accrual completed. Records created: {}", valueDateRecords);
-        } catch (Exception e) {
-            log.error("Error processing value date interest, but continuing with EOD: {}", e.getMessage(), e);
-            // Don't fail the entire batch job if value date interest fails
-            // This is a non-critical enhancement that shouldn't break existing EOD
-        }
-
-        return processedCount;
+        log.info("Batch Job 1 completed successfully. Accounts processed: {}, Failed: {}", recordsProcessed, failedAccounts.size());
+        return recordsProcessed;
     }
-    
+
     /**
-     * Process account balance for a specific account and date
-     * Implements the EOD logic as per specification
+     * Process account balance for a single account in a new transaction
+     * This ensures that failures in one account don't affect others
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    private void processAccountBalance(String accountNo, LocalDate systemDate) {
-        // Check if account balance record already exists for this date
-        Optional<AcctBal> existingRecord = acctBalRepository.findByAccountNoAndTranDate(accountNo, systemDate);
-        
-        BigDecimal openingBal;
-        
-        if (existingRecord.isPresent() && existingRecord.get().getOpeningBal() != null) {
-            // If Opening_Bal is not null then do not need to use below logics
-            openingBal = existingRecord.get().getOpeningBal();
-            log.debug("Using existing Opening_Bal for account: {} on date: {}, value: {}", 
-                    accountNo, systemDate, openingBal);
-        } else {
-            // Get previous day's Closing_Bal as Opening_Bal
-            openingBal = getPreviousDayClosingBalance(accountNo, systemDate);
-            log.debug("Calculated Opening_Bal for account: {} on date: {}, value: {}", 
-                    accountNo, systemDate, openingBal);
+    public void processAccountBalanceInNewTransaction(String accountNo, LocalDate systemDate) {
+        processAccountBalance(accountNo, systemDate);
+    }
+
+    /**
+     * Cleanup duplicate account balance record in a new transaction
+     * Used when retry logic detects a duplicate key error
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void cleanupDuplicateAccountBalance(String accountNo, LocalDate tranDate) {
+        log.info("Attempting to cleanup duplicate account balance for Account {} on date {}", accountNo, tranDate);
+
+        Optional<AcctBal> existingBalance = acctBalRepository.findByAccountNoAndTranDate(accountNo, tranDate);
+        if (existingBalance.isPresent()) {
+            acctBalRepository.delete(existingBalance.get());
+            acctBalRepository.flush();
+            log.info("Successfully deleted duplicate acct_bal for Account {} on date {}", accountNo, tranDate);
         }
-        
-        // Calculate DR_Summation and CR_Summation for Verified transactions only
-        Map<String, BigDecimal> summations = calculateDebitCreditSummations(accountNo, systemDate);
-        BigDecimal drSummation = summations.get("DR");
-        BigDecimal crSummation = summations.get("CR");
-        
-        // Handle NULL sums
-        if (drSummation == null) drSummation = BigDecimal.ZERO;
-        if (crSummation == null) crSummation = BigDecimal.ZERO;
-        
-        // Calculate Closing_Bal: Closing_Bal = Opening_Bal + CR_Summation - DR_Summation
-        BigDecimal closingBal = openingBal.add(crSummation).subtract(drSummation);
-        
-        // ✅ FIX: Get account currency from BOTH customer and office account tables
-        // This ensures NOSTRO and other office accounts get correct currency (USD, not BDT)
-        String accountCurrency = custAcctMasterRepository.findById(accountNo)
-                .map(acct -> acct.getAccountCcy())
-                .orElseGet(() -> ofAcctMasterRepository.findById(accountNo)
-                        .map(acct -> acct.getAccountCcy())
-                        .orElse("BDT")); // Default to BDT only if account not found in either table
-        
-        // Insert/Update record in Acct_Bal (INSERT ... ON DUPLICATE KEY UPDATE pattern)
-        AcctBal accountBalance;
-        if (existingRecord.isPresent()) {
-            // ✅ FIX: Update existing record AND preserve/correct Account_Ccy
-            accountBalance = existingRecord.get();
-            accountBalance.setAccountCcy(accountCurrency); // ← FIX: Ensure currency matches account master
-            accountBalance.setOpeningBal(openingBal);
-            accountBalance.setDrSummation(drSummation);
-            accountBalance.setCrSummation(crSummation);
-            accountBalance.setClosingBal(closingBal);
-            accountBalance.setCurrentBalance(closingBal);
-            accountBalance.setAvailableBalance(closingBal);
-            // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
-            accountBalance.setLastUpdated(systemDateService.getSystemDateTime());
-            log.debug("Updating existing EOD record for account: {} on date: {} with currency: {}", 
-                    accountNo, systemDate, accountCurrency);
+
+        Optional<AcctBalLcy> existingBalanceLcy = acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, tranDate);
+        if (existingBalanceLcy.isPresent()) {
+            acctBalLcyRepository.delete(existingBalanceLcy.get());
+            acctBalLcyRepository.flush();
+            log.info("Successfully deleted duplicate acct_bal_lcy for Account {} on date {}", accountNo, tranDate);
+        }
+    }
+
+    /**
+     * Process account balance for a single account
+     * Updates both acct_bal and acct_bal_lcy
+     */
+    private void processAccountBalance(String accountNo, LocalDate systemDate) {
+        // Get account currency for both customer and office accounts
+        String accountCcy;
+        Optional<CustAcctMaster> custAccountOpt = custAcctMasterRepository.findById(accountNo);
+        if (custAccountOpt.isPresent()) {
+            accountCcy = custAccountOpt.get().getAccountCcy();
         } else {
-            // ✅ FIX: Insert new record with correct currency from account master (customer OR office)
-            accountBalance = AcctBal.builder()
-                    .tranDate(systemDate)
+            OFAcctMaster ofAccount = ofAcctMasterRepository.findById(accountNo)
+                    .orElseThrow(() -> new BusinessException("Account not found: " + accountNo));
+            accountCcy = ofAccount.getAccountCcy();
+        }
+
+        // Step a: Get Opening Balance from previous day's Closing Balance (original currency)
+        BigDecimal openingBal = getOpeningBalance(accountNo, systemDate);
+
+        // Step a (LCY): Derive LCY opening from previous day's acct_bal closing balance
+        // If currency = BDT, LCY opening equals closing balance
+        // If currency = USD/other FCY, convert closing balance to BDT using mid rate
+        BigDecimal openingBalLcy;
+        if ("BDT".equals(accountCcy)) {
+            openingBalLcy = openingBal;
+        } else {
+            openingBalLcy = exchangeRateService.convertToLCY(openingBal, accountCcy, systemDate);
+        }
+
+        /*
+         * Step b & c: Calculate DR and CR Summation from Tran_Table
+         *
+         * FOR acct_bal (original currency amounts):
+         *  - Sum FCY_Amt for DR and CR in the account's original currency
+         *
+         * FOR acct_bal_lcy (LCY/BDT amounts):
+         *  - Sum Debit_Amount and Credit_Amount (already in LCY)
+         */
+        DRCRSummation summation = calculateDRCRSummation(accountNo, systemDate);
+        BigDecimal drSummation = summation.drSummation;
+        BigDecimal crSummation = summation.crSummation;
+
+        // LCY DR/CR summations (already in LCY)
+        BigDecimal drSummationLcy = summation.drSummationLcy;
+        BigDecimal crSummationLcy = summation.crSummationLcy;
+
+        // Step d: Calculate Closing Balance
+        // Closing_Bal = Opening_Bal + CR_Summation - DR_Summation
+        BigDecimal closingBal = openingBal.add(crSummation).subtract(drSummation);
+        BigDecimal closingBalLcy = openingBalLcy.add(crSummationLcy).subtract(drSummationLcy);
+
+        log.debug("Account {}: Currency={}, Opening={}, DR={}, CR={}, Closing={}",
+                accountNo, accountCcy, openingBal, drSummation, crSummation, closingBal);
+        log.debug("Account {} (LCY): Opening={}, DR={}, CR={}, Closing={}",
+                accountNo, openingBalLcy, drSummationLcy, crSummationLcy, closingBalLcy);
+
+        // Step e: Save to acct_bal (original currency)
+        saveOrUpdateAcctBal(accountNo, systemDate, accountCcy, openingBal, drSummation, crSummation, closingBal);
+
+        // Step f: Save to acct_bal_lcy (BDT)
+        saveOrUpdateAcctBalLcy(accountNo, systemDate, openingBalLcy, drSummationLcy, crSummationLcy, closingBalLcy);
+    }
+
+    /**
+     * Get opening balance for account using 3-tier fallback logic
+     * 
+     * Tier 1: Previous day's record (systemDate - 1)
+     * Tier 2: Last transaction date (MAX(Tran_Date) < systemDate)
+     * Tier 3: New account (return 0)
+     */
+    private BigDecimal getOpeningBalance(String accountNo, LocalDate systemDate) {
+        List<AcctBal> balances = acctBalRepository
+                .findByAccountNoAndTranDateBeforeOrderByTranDateDesc(accountNo, systemDate);
+
+        if (balances.isEmpty()) {
+            log.info("3-Tier Fallback [Tier 3 - New Account]: Account {} has no previous records. Using Opening_Bal = 0", accountNo);
+            return BigDecimal.ZERO;
+        }
+
+        LocalDate previousDay = systemDate.minusDays(1);
+        Optional<AcctBal> previousDayRecord = balances.stream()
+                .filter(bal -> previousDay.equals(bal.getTranDate()))
+                .findFirst();
+
+        if (previousDayRecord.isPresent()) {
+            BigDecimal closingBal = previousDayRecord.get().getClosingBal();
+            log.debug("3-Tier Fallback [Tier 1 - Previous Day]: Account {} found record for {} with Closing_Bal = {}",
+                    accountNo, previousDay, closingBal);
+            return closingBal != null ? closingBal : BigDecimal.ZERO;
+        }
+
+        AcctBal lastRecord = balances.get(0);
+        BigDecimal lastClosingBal = lastRecord.getClosingBal();
+        log.warn("3-Tier Fallback [Tier 2 - Last Transaction]: Account {} previous day {} not found. " +
+                "Using last Closing_Bal from {} = {}",
+                accountNo, previousDay, lastRecord.getTranDate(), lastClosingBal);
+
+        return lastClosingBal != null ? lastClosingBal : BigDecimal.ZERO;
+    }
+
+    /**
+     * Get opening balance in LCY for account using 3-tier fallback logic
+     */
+    private BigDecimal getOpeningBalanceLcy(String accountNo, LocalDate systemDate) {
+        List<AcctBalLcy> balances = acctBalLcyRepository
+                .findByAccountNoAndTranDateBeforeOrderByTranDateDesc(accountNo, systemDate);
+
+        if (balances.isEmpty()) {
+            log.info("3-Tier Fallback [Tier 3 - New Account]: Account {} has no previous LCY records. Using Opening_Bal_lcy = 0", accountNo);
+            return BigDecimal.ZERO;
+        }
+
+        LocalDate previousDay = systemDate.minusDays(1);
+        Optional<AcctBalLcy> previousDayRecord = balances.stream()
+                .filter(bal -> previousDay.equals(bal.getTranDate()))
+                .findFirst();
+
+        if (previousDayRecord.isPresent()) {
+            BigDecimal closingBalLcy = previousDayRecord.get().getClosingBalLcy();
+            log.debug("3-Tier Fallback [Tier 1 - Previous Day]: Account {} found LCY record for {} with Closing_Bal_lcy = {}",
+                    accountNo, previousDay, closingBalLcy);
+            return closingBalLcy != null ? closingBalLcy : BigDecimal.ZERO;
+        }
+
+        AcctBalLcy lastRecord = balances.get(0);
+        BigDecimal lastClosingBalLcy = lastRecord.getClosingBalLcy();
+        log.warn("3-Tier Fallback [Tier 2 - Last Transaction]: Account {} previous day {} not found. " +
+                "Using last Closing_Bal_lcy from {} = {}",
+                accountNo, previousDay, lastRecord.getTranDate(), lastClosingBalLcy);
+
+        return lastClosingBalLcy != null ? lastClosingBalLcy : BigDecimal.ZERO;
+    }
+
+    /**
+     * Calculate DR and CR summation from Tran_Table.
+     *
+     * FOR acct_bal (original currency amounts):
+     *  - Sum FCY_Amt for DR and CR in the account's original currency
+     *
+     * FOR acct_bal_lcy (LCY/BDT amounts):
+     *  - Sum Debit_Amount and Credit_Amount (already in LCY)
+     */
+    private DRCRSummation calculateDRCRSummation(String accountNo, LocalDate systemDate) {
+        // Get all transactions for this account on this date
+        List<TranTable> transactions = tranTableRepository.findByAccountNoAndTranDate(accountNo, systemDate);
+
+        BigDecimal drSummation = BigDecimal.ZERO;
+        BigDecimal crSummation = BigDecimal.ZERO;
+        BigDecimal drSummationLcy = BigDecimal.ZERO;
+        BigDecimal crSummationLcy = BigDecimal.ZERO;
+
+        for (TranTable tran : transactions) {
+            BigDecimal fcyAmt = tran.getFcyAmt() != null ? tran.getFcyAmt() : BigDecimal.ZERO;
+            BigDecimal debitAmt = tran.getDebitAmount() != null ? tran.getDebitAmount() : BigDecimal.ZERO;
+            BigDecimal creditAmt = tran.getCreditAmount() != null ? tran.getCreditAmount() : BigDecimal.ZERO;
+
+            if (tran.getDrCrFlag() == TranTable.DrCrFlag.D) {
+                // acct_bal: DR summation in original currency (FCY_Amt)
+                drSummation = drSummation.add(fcyAmt);
+                // acct_bal_lcy: DR summation in LCY (Debit_Amount)
+                drSummationLcy = drSummationLcy.add(debitAmt);
+            } else if (tran.getDrCrFlag() == TranTable.DrCrFlag.C) {
+                // acct_bal: CR summation in original currency (FCY_Amt)
+                crSummation = crSummation.add(fcyAmt);
+                // acct_bal_lcy: CR summation in LCY (Credit_Amount)
+                crSummationLcy = crSummationLcy.add(creditAmt);
+            }
+        }
+
+        log.debug("Account {}: DR={}, CR={}, DR_LCY={}, CR_LCY={}",
+                accountNo, drSummation, crSummation, drSummationLcy, crSummationLcy);
+
+        return new DRCRSummation(drSummation, crSummation, drSummationLcy, crSummationLcy);
+    }
+
+    /**
+     * Save or update acct_bal record (original currency)
+     */
+    private void saveOrUpdateAcctBal(String accountNo, LocalDate tranDate, String accountCcy,
+                                     BigDecimal openingBal, BigDecimal drSummation,
+                                     BigDecimal crSummation, BigDecimal closingBal) {
+        Optional<AcctBal> existingBalOpt = acctBalRepository.findByAccountNoAndTranDate(accountNo, tranDate);
+
+        AcctBal acctBal;
+
+        if (existingBalOpt.isPresent()) {
+            acctBal = existingBalOpt.get();
+            acctBal.setAccountCcy(accountCcy);
+            acctBal.setOpeningBal(openingBal);
+            acctBal.setDrSummation(drSummation);
+            acctBal.setCrSummation(crSummation);
+            acctBal.setClosingBal(closingBal);
+            acctBal.setCurrentBalance(closingBal);
+            acctBal.setAvailableBalance(closingBal);
+            acctBal.setLastUpdated(systemDateService.getSystemDateTime());
+            log.debug("Updated existing acct_bal for Account {}", accountNo);
+        } else {
+            acctBal = AcctBal.builder()
+                    .tranDate(tranDate)
                     .accountNo(accountNo)
-                    .accountCcy(accountCurrency) // ← Already includes office accounts now
+                    .accountCcy(accountCcy)
                     .openingBal(openingBal)
                     .drSummation(drSummation)
                     .crSummation(crSummation)
                     .closingBal(closingBal)
                     .currentBalance(closingBal)
                     .availableBalance(closingBal)
-                    // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
                     .lastUpdated(systemDateService.getSystemDateTime())
                     .build();
-            log.debug("Creating new EOD record for account: {} (currency: {}) on date: {}", 
-                    accountNo, accountCurrency, systemDate);
+            log.debug("Created new acct_bal for Account {}", accountNo);
         }
-        
-        acctBalRepository.save(accountBalance);
-        log.debug("EOD balance processed for account: {} on date: {} - Opening: {}, DR: {}, CR: {}, Closing: {}", 
-                accountNo, systemDate, openingBal, drSummation, crSummation, closingBal);
-    }
-    
-    /**
-     * Get previous day's closing balance for an account using 3-tier fallback logic
-     *
-     * This method implements the standardized 3-tier fallback logic for opening balance retrieval:
-     * - Tier 1: Previous day's record (systemDate - 1)
-     * - Tier 2: Last transaction date (MAX(Tran_Date) < systemDate)
-     * - Tier 3: New account (return 0)
-     *
-     * This method is PUBLIC and shared across services to ensure consistent logic.
-     * Used by: Batch Job 1, Transaction Validation, Balance Service
-     *
-     * @param accountNo The account number
-     * @param systemDate The system date
-     * @return Opening balance (previous day's closing balance)
-     */
-    public BigDecimal getPreviousDayClosingBalance(String accountNo, LocalDate systemDate) {
-        // Get all account balance records for this account before the system date
-        List<AcctBal> accountBalances = acctBalRepository
-                .findByAccountNoAndTranDateBeforeOrderByTranDateDesc(accountNo, systemDate);
 
-        // Tier 3: If no previous record exists at all, Opening_Bal = 0 (new account)
-        if (accountBalances.isEmpty()) {
-            log.info("3-Tier Fallback [Tier 3 - New Account]: Account {} has no previous records before {}. Using Opening_Bal = 0",
-                    accountNo, systemDate);
+        acctBalRepository.save(acctBal);
+    }
+
+    /**
+     * Save or update acct_bal_lcy record (BDT)
+     */
+    private void saveOrUpdateAcctBalLcy(String accountNo, LocalDate tranDate,
+                                        BigDecimal openingBalLcy, BigDecimal drSummationLcy,
+                                        BigDecimal crSummationLcy, BigDecimal closingBalLcy) {
+        Optional<AcctBalLcy> existingBalLcyOpt = acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, tranDate);
+
+        AcctBalLcy acctBalLcy;
+
+        if (existingBalLcyOpt.isPresent()) {
+            acctBalLcy = existingBalLcyOpt.get();
+            acctBalLcy.setOpeningBalLcy(openingBalLcy);
+            acctBalLcy.setDrSummationLcy(drSummationLcy);
+            acctBalLcy.setCrSummationLcy(crSummationLcy);
+            acctBalLcy.setClosingBalLcy(closingBalLcy);
+            acctBalLcy.setAvailableBalanceLcy(closingBalLcy);
+            acctBalLcy.setLastUpdated(systemDateService.getSystemDateTime());
+            log.debug("Updated existing acct_bal_lcy for Account {}", accountNo);
+        } else {
+            acctBalLcy = AcctBalLcy.builder()
+                    .tranDate(tranDate)
+                    .accountNo(accountNo)
+                    .openingBalLcy(openingBalLcy)
+                    .drSummationLcy(drSummationLcy)
+                    .crSummationLcy(crSummationLcy)
+                    .closingBalLcy(closingBalLcy)
+                    .availableBalanceLcy(closingBalLcy)
+                    .lastUpdated(systemDateService.getSystemDateTime())
+                    .build();
+            log.debug("Created new acct_bal_lcy for Account {}", accountNo);
+        }
+
+        acctBalLcyRepository.save(acctBalLcy);
+    }
+
+    /**
+     * Get previous day's closing balance for an account
+     * Used by BalanceService and TransactionValidationService
+     * 
+     * @param accountNo The account number
+     * @param date The reference date (will get previous day's balance)
+     * @return Previous day's closing balance, or ZERO if not found
+     */
+    public BigDecimal getPreviousDayClosingBalance(String accountNo, LocalDate date) {
+        LocalDate previousDay = date.minusDays(1);
+        
+        log.debug("Getting previous day closing balance for account {} on date {} (previous day: {})", 
+                accountNo, date, previousDay);
+        
+        Optional<AcctBal> previousBalance = acctBalRepository.findByAccountNoAndTranDate(accountNo, previousDay);
+        
+        if (previousBalance.isEmpty()) {
+            log.debug("No balance found for account {} on previous day {}. Returning ZERO", accountNo, previousDay);
             return BigDecimal.ZERO;
         }
-
-        // Tier 1: Try to get the previous day's record
-        LocalDate previousDay = systemDate.minusDays(1);
-        Optional<AcctBal> previousDayRecord = accountBalances.stream()
-                .filter(acctBal -> previousDay.equals(acctBal.getTranDate()))
-                .findFirst();
-
-        if (previousDayRecord.isPresent()) {
-            BigDecimal previousDayClosingBal = previousDayRecord.get().getClosingBal();
-            if (previousDayClosingBal == null) {
-                previousDayClosingBal = BigDecimal.ZERO;
-            }
-            log.debug("3-Tier Fallback [Tier 1 - Previous Day]: Account {} found record for {} with Closing_Bal = {}",
-                    accountNo, previousDay, previousDayClosingBal);
-            return previousDayClosingBal;
+        
+        BigDecimal closingBal = previousBalance.get().getClosingBal();
+        
+        if (closingBal == null) {
+            log.warn("Closing balance is NULL for account {} on {}. Returning ZERO", accountNo, previousDay);
+            return BigDecimal.ZERO;
         }
-
-        // Tier 2: Previous day's record doesn't exist, use last transaction date
-        AcctBal lastRecord = accountBalances.get(0); // First in sorted list (most recent)
-        BigDecimal lastClosingBal = lastRecord.getClosingBal();
-        if (lastClosingBal == null) {
-            lastClosingBal = BigDecimal.ZERO;
-        }
-
-        long daysSinceLastRecord = java.time.temporal.ChronoUnit.DAYS.between(lastRecord.getTranDate(), systemDate);
-        log.warn("3-Tier Fallback [Tier 2 - Last Transaction]: Account {} has gap of {} days. Previous day {} not found. " +
-                "Using last Closing_Bal from {} = {}",
-                accountNo, daysSinceLastRecord, previousDay, lastRecord.getTranDate(), lastClosingBal);
-
-        return lastClosingBal;
+        
+        log.debug("Previous day closing balance for account {}: {}", accountNo, closingBal);
+        return closingBal;
     }
-    
-    
+
     /**
-     * Calculate debit and credit summations for an account on a specific date
-     * Only includes transactions with Tran_Status = 'Verified' as per specification
-     *
-     * MULTI-CURRENCY LOGIC:
-     * - For BDT accounts: Sum using LCY_Amt
-     * - For FCY accounts (USD, EUR, etc.): Sum using FCY_Amt
-     */
-    private Map<String, BigDecimal> calculateDebitCreditSummations(String accountNo, LocalDate systemDate) {
-        // Get all transactions for the account on the system date with Verified status only
-        List<TranTable> transactions = tranTableRepository.findByAccountNoAndTranDate(accountNo, systemDate).stream()
-                .filter(t -> t.getTranStatus() == TranTable.TranStatus.Verified) // Only Verified transactions
-                .collect(Collectors.toList());
-
-        if (transactions.isEmpty()) {
-            log.debug("No verified transactions found for account: {} on date: {}", accountNo, systemDate);
-            return Map.of("DR", BigDecimal.ZERO, "CR", BigDecimal.ZERO);
-        }
-
-        // Get account currency - check customer account first, then office account
-        String accountCurrency = custAcctMasterRepository.findById(accountNo)
-                .map(acct -> acct.getAccountCcy())
-                .orElseGet(() -> ofAcctMasterRepository.findById(accountNo)
-                        .map(acct -> acct.getAccountCcy())
-                        .orElse("BDT")); // Default to BDT if account not found
-
-        BigDecimal drSummation = BigDecimal.ZERO;
-        BigDecimal crSummation = BigDecimal.ZERO;
-
-        for (TranTable transaction : transactions) {
-            // Determine amount to use based on account currency
-            BigDecimal transactionAmount;
-            if ("BDT".equals(accountCurrency)) {
-                // BDT account: Use LCY amount
-                transactionAmount = transaction.getLcyAmt();
-            } else {
-                // FCY account (USD, EUR, etc.): Use FCY amount
-                transactionAmount = transaction.getFcyAmt();
-            }
-
-            if (transaction.getDrCrFlag() == TranTable.DrCrFlag.D) {
-                drSummation = drSummation.add(transactionAmount);
-            } else if (transaction.getDrCrFlag() == TranTable.DrCrFlag.C) {
-                crSummation = crSummation.add(transactionAmount);
-            }
-        }
-
-        log.debug("Calculated summations for {} account {} on date: {} - DR: {} {}, CR: {} {} (from {} verified transactions)",
-                accountCurrency, accountNo, systemDate, drSummation, accountCurrency, crSummation, accountCurrency, transactions.size());
-
-        return Map.of(
-                "DR", drSummation,
-                "CR", crSummation
-        );
-    }
-    
-    /**
-     * Validate that all accounts with transactions have been processed for EOD
+     * Validate that account balance update can proceed for the given date
+     * Used by AdminController for pre-validation before running balance updates
      * 
-     * @param systemDate The system date to validate
-     * @return true if validation passes, false otherwise
+     * @param date The date to validate
+     * @return true if validation passes
+     * @throws BusinessException if validation fails
      */
-    public boolean validateAccountBalanceUpdate(LocalDate systemDate) {
-        // Get all unique account numbers that have transactions on the system date
-        List<String> accountsWithTransactions = tranTableRepository.findByTranDateBetween(systemDate, systemDate)
-                .stream()
-                .map(TranTable::getAccountNo)
-                .distinct()
-                .collect(Collectors.toList());
+    public boolean validateAccountBalanceUpdate(LocalDate date) {
+        log.info("Validating account balance update for date: {}", date);
         
-        // Get all account numbers that have been updated for the system date
-        List<String> accountNosWithUpdatedBalances = acctBalRepository.findByTranDate(systemDate)
-                .stream()
-                .map(AcctBal::getAccountNo)
-                .distinct()
-                .collect(Collectors.toList());
-        
-        // Check if all accounts with transactions have been processed
-        boolean isValid = accountsWithTransactions.containsAll(accountNosWithUpdatedBalances) &&
-                         accountNosWithUpdatedBalances.containsAll(accountsWithTransactions);
-        
-        if (!isValid) {
-            log.warn("EOD validation failed on date: {}. " +
-                    "Accounts with transactions: {}, Accounts with EOD records: {}",
-                    systemDate, accountsWithTransactions.size(), accountNosWithUpdatedBalances.size());
-            
-            // Log missing accounts
-            List<String> missingAccounts = accountsWithTransactions.stream()
-                    .filter(accountNo -> !accountNosWithUpdatedBalances.contains(accountNo))
-                    .collect(Collectors.toList());
-            
-            if (!missingAccounts.isEmpty()) {
-                log.warn("Missing EOD records for {} accounts with transactions: {}", missingAccounts.size(), missingAccounts);
-            }
-        } else {
-            log.info("EOD validation passed for date: {} - All {} accounts with transactions processed", 
-                    systemDate, accountsWithTransactions.size());
+        // Validation 1: Check if date is not in the future
+        LocalDate systemDate = systemDateService.getSystemDate();
+        if (date.isAfter(systemDate)) {
+            String errorMsg = String.format("Cannot update balances for future date %s. System date is %s", 
+                    date, systemDate);
+            log.error(errorMsg);
+            throw new BusinessException(errorMsg);
         }
         
-        return isValid;
+        // Validation 2: Check if there are any transactions for this date
+        List<TranTable> transactions = tranTableRepository.findByTranDateBetween(date, date);
+        if (transactions.isEmpty()) {
+            log.warn("No transactions found for date {}. Balance update may not be necessary", date);
+        } else {
+            log.info("Found {} transactions for date {}", transactions.size(), date);
+        }
+        
+        // Validation 3: Check if there are any customer accounts
+        long accountCount = custAcctMasterRepository.count();
+        if (accountCount == 0) {
+            String errorMsg = "No customer accounts found in the system";
+            log.error(errorMsg);
+            throw new BusinessException(errorMsg);
+        }
+        
+        log.info("Validation passed for account balance update on date {}. {} accounts will be processed", 
+                date, accountCount);
+        
+        return true;
+    }
+
+    /**
+     * Helper class to hold DR and CR summation results
+     */
+    private static class DRCRSummation {
+        final BigDecimal drSummation;
+        final BigDecimal crSummation;
+        final BigDecimal drSummationLcy;
+        final BigDecimal crSummationLcy;
+
+        DRCRSummation(BigDecimal drSummation, BigDecimal crSummation, 
+                     BigDecimal drSummationLcy, BigDecimal crSummationLcy) {
+            this.drSummation = drSummation;
+            this.crSummation = crSummation;
+            this.drSummationLcy = drSummationLcy;
+            this.crSummationLcy = crSummationLcy;
+        }
     }
 }
-

@@ -1,6 +1,7 @@
 package com.example.moneymarket.service;
 
 import com.example.moneymarket.entity.AcctBal;
+import com.example.moneymarket.entity.AcctBalLcy;
 import com.example.moneymarket.entity.AcctBalAccrual;
 import com.example.moneymarket.entity.GLBalance;
 import com.example.moneymarket.entity.CustAcctMaster;
@@ -8,6 +9,7 @@ import com.example.moneymarket.entity.OFAcctMaster;
 import com.example.moneymarket.entity.TranTable.DrCrFlag;
 import com.example.moneymarket.exception.ResourceNotFoundException;
 import com.example.moneymarket.repository.AcctBalRepository;
+import com.example.moneymarket.repository.AcctBalLcyRepository;
 import com.example.moneymarket.repository.AcctBalAccrualRepository;
 import com.example.moneymarket.repository.CustAcctMasterRepository;
 import com.example.moneymarket.repository.OFAcctMasterRepository;
@@ -34,6 +36,7 @@ import java.util.Optional;
 public class BalanceService {
 
     private final AcctBalRepository acctBalRepository;
+    private final AcctBalLcyRepository acctBalLcyRepository;
     private final AcctBalAccrualRepository acctBalAccrualRepository;
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final OFAcctMasterRepository ofAcctMasterRepository;
@@ -277,6 +280,13 @@ public class BalanceService {
         // Get interest accrued from acct_bal_accrual table (latest closing balance)
         BigDecimal interestAccrued = getLatestInterestAccrued(accountNo);
 
+        // Get LCY (BDT) balances from acct_bal_lcy
+        BigDecimal currentBalanceLcy = getAccountBalanceLcy(accountNo, systemDate);
+        BigDecimal availableBalanceLcy = getAvailableBalanceLcy(accountNo, systemDate);
+        
+        // For computed balance LCY: Get from acct_bal_lcy if exists, otherwise use current balance LCY
+        BigDecimal computedBalanceLcy = currentBalanceLcy;
+
         return com.example.moneymarket.dto.AccountBalanceDTO.builder()
                 .accountNo(accountNo)
                 .accountName(accountName)
@@ -288,6 +298,9 @@ public class BalanceService {
                 .todayCredits(dateCredits)
                 .computedBalance(computedBalance)
                 .interestAccrued(interestAccrued)
+                .currentBalanceLcy(currentBalanceLcy)      // Balance in BDT
+                .availableBalanceLcy(availableBalanceLcy)  // Available balance in BDT
+                .computedBalanceLcy(computedBalanceLcy)    // Computed balance in BDT
                 .build();
     }
 
@@ -359,5 +372,55 @@ public class BalanceService {
         return glBalanceRepository.findLatestByGlNum(glNum)
                 .map(GLBalance::getCurrentBalance)
                 .orElse(BigDecimal.ZERO);
+    }
+
+    /**
+     * Get account balance in LCY (BDT) for a specific date
+     * 
+     * @param accountNo The account number
+     * @param tranDate The transaction date
+     * @return The account balance in LCY, or ZERO if not found
+     */
+    public BigDecimal getAccountBalanceLcy(String accountNo, LocalDate tranDate) {
+        return acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, tranDate)
+                .map(AcctBalLcy::getClosingBalLcy)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    /**
+     * Get latest account balance in LCY (BDT)
+     * 
+     * @param accountNo The account number
+     * @return The latest account balance in LCY, or ZERO if not found
+     */
+    public BigDecimal getLatestAccountBalanceLcy(String accountNo) {
+        return acctBalLcyRepository.findLatestByAccountNo(accountNo)
+                .map(AcctBalLcy::getClosingBalLcy)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    /**
+     * Get available balance in LCY (BDT) for a specific date
+     * 
+     * @param accountNo The account number
+     * @param tranDate The transaction date
+     * @return The available balance in LCY, or ZERO if not found
+     */
+    public BigDecimal getAvailableBalanceLcy(String accountNo, LocalDate tranDate) {
+        return acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, tranDate)
+                .map(AcctBalLcy::getAvailableBalanceLcy)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    /**
+     * Get all account balances in LCY for a specific date
+     * Useful for consolidated reporting across all currencies
+     * 
+     * @param tranDate The transaction date
+     * @return List of all account balances in LCY for the date
+     */
+    @Transactional(readOnly = true)
+    public List<AcctBalLcy> getAllAccountBalancesLcy(LocalDate tranDate) {
+        return acctBalLcyRepository.findByTranDate(tranDate);
     }
 }

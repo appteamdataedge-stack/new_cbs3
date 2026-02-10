@@ -26,5 +26,10 @@ public class AccountBalanceDTO {
     private BigDecimal todayCredits;     // Current day credit transactions (in account's currency)
     private BigDecimal computedBalance;  // Previous day opening + current day credits - current day debits (REAL-TIME BALANCE in account's currency)
     private BigDecimal interestAccrued;  // Latest closing balance from acct_bal_accrual table (in account's currency)
+    
+    // LCY (BDT) equivalent amounts - for multi-currency reporting
+    private BigDecimal currentBalanceLcy;   // Current balance in BDT (from acct_bal_lcy)
+    private BigDecimal availableBalanceLcy; // Available balance in BDT (from acct_bal_lcy)
+    private BigDecimal computedBalanceLcy;  // Computed balance in BDT (converted from account currency)
 }
 
