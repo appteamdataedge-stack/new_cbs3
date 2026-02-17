@@ -53,7 +53,7 @@ const InterestCapitalizationDetails = () => {
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['account', accountNo] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      
+
       // Show success message with details
       toast.success(
         <Box>
@@ -65,13 +65,11 @@ const InterestCapitalizationDetails = () => {
         </Box>,
         { autoClose: 8000 }
       );
-      
+
       setConfirmDialog(false);
-      
-      // Navigate back to list after a delay
-      setTimeout(() => {
-        navigate('/interest-capitalization');
-      }, 2000);
+
+      // Refresh details page data to show updated balances (stay on page)
+      refetch();
     },
     onError: (error: Error) => {
       toast.error(`Failed to capitalize interest: ${error.message}`);
