@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Data
@@ -24,4 +25,13 @@ public class OfficeAccountResponseDTO {
     private String branchCode;
     private AccountStatus accountStatus;
     private Boolean reconciliationRequired;
+
+    // Balance & currency info (real-time, includes today's transactions)
+    private String accountCcy;
+    private BigDecimal currentBalance;
+    private BigDecimal availableBalance;
+    private BigDecimal computedBalance;
+    private BigDecimal availableBalanceLcy;
+    private BigDecimal computedBalanceLcy;
+    private BigDecimal wae; // Weighted Average Exchange Rate = availableBalanceLcy / availableBalance (FCY only)
 }

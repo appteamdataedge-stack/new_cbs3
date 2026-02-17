@@ -313,6 +313,12 @@ const TransactionList = () => {
       });
       
       toast.success('Transaction posted successfully. Balances have been updated.');
+      if (result.settlementGainLoss != null && result.settlementGainLoss !== 0 && result.settlementGainLossType) {
+        const msg = result.settlementGainLossType === 'GAIN'
+          ? `Settlement Gain: ${result.settlementGainLoss.toFixed(2)} BDT`
+          : `Settlement Loss: ${result.settlementGainLoss.toFixed(2)} BDT`;
+        toast.info(msg);
+      }
       refetch();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to post transaction');

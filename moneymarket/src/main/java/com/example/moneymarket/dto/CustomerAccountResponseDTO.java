@@ -41,6 +41,11 @@ public class CustomerAccountResponseDTO {
     private String accountCcy;              // Account currency (USD, BDT, etc.) from Product
     private BigDecimal interestRate;        // Interest rate from Sub-Product
     private String makerId;                 // Created by (Maker ID) from cust_acct_master
+
+    // LCY (BDT) real-time amounts + WAE for FCY accounts
+    private BigDecimal availableBalanceLcy; // Available balance in BDT (real-time)
+    private BigDecimal computedBalanceLcy;  // Computed balance in BDT (Prev Day LCY + Credits LCY - Debits LCY)
+    private BigDecimal wae;                 // Weighted Average Exchange Rate = availableBalanceLcy / availableBalance
     
     // Message for UI display (e.g., confirmation messages)
     private String message;

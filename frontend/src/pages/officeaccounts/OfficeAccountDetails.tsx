@@ -13,6 +13,7 @@ import {
   DialogTitle,
   Divider,
   Grid,
+  Paper,
   Typography
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -113,6 +114,18 @@ const OfficeAccountDetails = () => {
     );
   }
 
+  const formatAmount = (amount?: number) => {
+    if (amount === undefined || amount === null) return '0.00';
+    return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const formatRate = (rate?: number) => {
+    if (rate === undefined || rate === null) return 'N/A';
+    return rate.toFixed(4);
+  };
+
+  const isFcyAccount = (account.accountCcy || 'BDT') !== 'BDT';
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
@@ -157,6 +170,63 @@ const OfficeAccountDetails = () => {
           </Box>
         </Box>
       </Box>
+
+      {/* Balance Summary */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Balance Summary
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Available Balance
+                </Typography>
+                <Typography variant="h5">
+                  {formatAmount(account.availableBalance)} {account.accountCcy || ''}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  Includes today's transactions
+                </Typography>
+              </Paper>
+            </Grid>
+
+            {isFcyAccount && (
+              <>
+                <Grid item xs={12} md={6}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Available Balance (LCY)
+                    </Typography>
+                    <Typography variant="h5">
+                      {formatAmount(account.availableBalanceLcy)} BDT
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      BDT equivalent available balance (real-time)
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      WAE (LCY / FCY)
+                    </Typography>
+                    <Typography variant="h5">
+                      {formatRate(account.wae)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      Weighted Average Exchange Rate
+                    </Typography>
+                  </Paper>
+                </Grid>
+              </>
+            )}
+          </Grid>
+        </CardContent>
+      </Card>
 
       <Grid container spacing={3} sx={{ mt: 2 }}>
         {/* Account Information */}

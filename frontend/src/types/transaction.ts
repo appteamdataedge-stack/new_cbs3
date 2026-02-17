@@ -55,6 +55,10 @@ export interface TransactionResponseDTO {
   lines: TransactionLineResponseDTO[];
   balanced: boolean;
   status: string;
+  /** Settlement gain/loss in BDT when posting FCY settlement. */
+  settlementGainLoss?: number;
+  /** "GAIN" or "LOSS" when settlementGainLoss is non-zero. */
+  settlementGainLossType?: 'GAIN' | 'LOSS';
 }
 
 // Account balance DTO
@@ -68,4 +72,10 @@ export interface AccountBalanceDTO {
   todayDebits: number;       // Current day debit transactions
   todayCredits: number;      // Current day credit transactions
   computedBalance: number;    // Previous day opening + current day credits - current day debits
+
+  // LCY (BDT) + WAE for FCY accounts
+  currentBalanceLcy?: number;
+  availableBalanceLcy?: number;
+  computedBalanceLcy?: number;
+  wae?: number;              // Weighted Average Exchange Rate = availableBalanceLcy / availableBalance
 }

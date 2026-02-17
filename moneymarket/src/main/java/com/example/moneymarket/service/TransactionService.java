@@ -326,11 +326,16 @@ public class TransactionService {
         glMovementRepository.saveAll(glMovements);
 
         // Process multi-currency transactions (MCT) based on transaction type
-        multiCurrencyTransactionService.processMultiCurrencyTransaction(transactions, transactionType);
+        BigDecimal settlementGainLoss = multiCurrencyTransactionService.processMultiCurrencyTransaction(transactions, transactionType);
 
         TranTable firstLine = transactions.get(0);
         TransactionResponseDTO response = buildTransactionResponse(tranId, firstLine.getTranDate(),
                 firstLine.getValueDate(), firstLine.getNarration(), transactions);
+
+        if (settlementGainLoss != null && settlementGainLoss.compareTo(BigDecimal.ZERO) != 0) {
+            response.setSettlementGainLoss(settlementGainLoss.abs());
+            response.setSettlementGainLossType(settlementGainLoss.compareTo(BigDecimal.ZERO) > 0 ? "GAIN" : "LOSS");
+        }
 
         log.info("Current-dated transaction posted with ID: {} (Type: {})", tranId, transactionType);
         return response;

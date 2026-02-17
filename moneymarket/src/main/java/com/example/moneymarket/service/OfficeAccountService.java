@@ -32,6 +32,7 @@ public class OfficeAccountService {
     private final AcctBalRepository acctBalRepository;
     private final AccountNumberService accountNumberService;
     private final SystemDateService systemDateService;
+    private final BalanceService balanceService;
 
     /**
      * Create a new office account
@@ -227,6 +228,14 @@ public class OfficeAccountService {
      * @return The response DTO
      */
     private OfficeAccountResponseDTO mapToResponse(OFAcctMaster entity) {
+        // Real-time balance (includes today's transactions) + LCY + WAE
+        com.example.moneymarket.dto.AccountBalanceDTO balanceDTO =
+                balanceService.getComputedAccountBalance(entity.getAccountNo());
+
+        BigDecimal currentBalance = acctBalRepository.findLatestByAccountNo(entity.getAccountNo())
+                .map(AcctBal::getCurrentBalance)
+                .orElse(BigDecimal.ZERO);
+
         return OfficeAccountResponseDTO.builder()
                 .accountNo(entity.getAccountNo())
                 .subProductId(entity.getSubProduct() != null ? entity.getSubProduct().getSubProductId() : null)
@@ -238,6 +247,13 @@ public class OfficeAccountService {
                 .branchCode(entity.getBranchCode())
                 .accountStatus(entity.getAccountStatus())
                 .reconciliationRequired(entity.getReconciliationRequired())
+                .accountCcy(entity.getAccountCcy())
+                .currentBalance(currentBalance)
+                .availableBalance(balanceDTO.getAvailableBalance())
+                .computedBalance(balanceDTO.getComputedBalance())
+                .availableBalanceLcy(balanceDTO.getAvailableBalanceLcy())
+                .computedBalanceLcy(balanceDTO.getComputedBalanceLcy())
+                .wae(balanceDTO.getWae())
                 .build();
     }
 }

@@ -37,6 +37,7 @@ const TransactionForm = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [accountBalances, setAccountBalances] = useState<Map<string, AccountBalanceDTO>>(new Map());
+  const [balanceByAccountNo, setBalanceByAccountNo] = useState<Map<string, AccountBalanceDTO>>(new Map());
   const [accountOverdraftStatus, setAccountOverdraftStatus] = useState<Map<string, boolean>>(new Map());
   const [assetAccounts, setAssetAccounts] = useState<Map<string, boolean>>(new Map());
   const [loadingBalances, setLoadingBalances] = useState<Set<number>>(new Set());
@@ -232,16 +233,14 @@ const TransactionForm = () => {
       ]);
       
       setAccountBalances(prev => new Map(prev).set(`${index}`, balanceData));
+      setBalanceByAccountNo(prev => new Map(prev).set(accountNo, balanceData));
       setAccountOverdraftStatus(prev => new Map(prev).set(`${index}`, overdraftData.isOverdraftAccount));
       setAssetAccounts(prev => new Map(prev).set(`${index}`, isAssetAccount || false));
       
-      // ✅ FIX ISSUE 3: Auto-set currency for USD accounts
+      // ✅ FIX ISSUE 3: Auto-set currency for USD accounts; auto-select WAE vs Mid by settlement
       const accountCurrency = balanceData.accountCcy || 'BDT';
       if (accountCurrency === 'USD') {
-        // Lock to USD currency
         setValue(`lines.${index}.tranCcy`, 'USD');
-        
-        // Fetch and set Mid Rate automatically
         try {
           const exchangeRateData = await getLatestExchangeRate('USD/BDT');
           setExchangeRates(prev => new Map(prev).set(index, {
@@ -249,12 +248,14 @@ const TransactionForm = () => {
             buyingRate: exchangeRateData.buyingRate,
             sellingRate: exchangeRateData.sellingRate
           }));
-          
-          // Lock to Mid Rate for USD accounts
-          setRateTypes(prev => new Map(prev).set(index, 'mid'));
-          setValue(`lines.${index}.exchangeRate`, exchangeRateData.midRate);
-          
-          toast.info(`USD account detected - Currency locked to USD, Rate set to Mid Rate: ${exchangeRateData.midRate}`);
+          // Settlement = Liability Debit or Asset Credit → WAE; else Mid (use just-fetched data)
+          applySettlementExchangeRate(index, balanceData, exchangeRateData.midRate);
+          const isAsset = selectedAccount?.glNum?.startsWith('2');
+          const drCr = watch(`lines.${index}.drCrFlag`);
+          const isSettlement = (!isAsset && drCr === DrCrFlag.D) || (!!isAsset && drCr === DrCrFlag.C);
+          toast.info(
+            `USD account – Rate: ${isSettlement ? 'Settlement (WAE)' : 'Mid'}`
+          );
         } catch (error) {
           console.error('Failed to fetch exchange rate for USD account:', error);
           toast.warning('USD account detected but failed to fetch exchange rate');
@@ -432,6 +433,40 @@ const TransactionForm = () => {
     const lcyAmount = Math.round(fcyAmount * exchangeRate * 100) / 100;
     setValue(`lines.${index}.lcyAmt`, lcyAmount);
     console.log(`Calculated LCY for line ${index}: FCY ${fcyAmount} × Rate ${exchangeRate} = LCY ${lcyAmount}`);
+  };
+
+  /**
+   * Settlement (WAE) vs Non-Settlement (Mid) rate selection:
+   * - Settlement: Liability DEBIT or Asset CREDIT → use WAE
+   * - Non-Settlement: Liability CREDIT or Asset DEBIT → use Mid
+   * GL 1xxx = Liability, GL 2xxx = Asset
+   * @param balanceOverride When called right after fetch, pass the new balance so we don't rely on stale state
+   * @param midRateOverride When called right after fetch, pass the fetched mid rate
+   */
+  const applySettlementExchangeRate = (
+    index: number,
+    balanceOverride?: AccountBalanceDTO,
+    midRateOverride?: number
+  ) => {
+    const balance = balanceOverride ?? accountBalances.get(`${index}`);
+    const accountCcy = balance?.accountCcy || 'BDT';
+    if (accountCcy !== 'USD') return;
+    const waeRate = balance?.wae;
+    const midRate = midRateOverride ?? exchangeRates.get(index)?.midRate ?? waeRate ?? 1;
+
+    const drCrFlag = watch(`lines.${index}.drCrFlag`);
+    const isAsset = assetAccounts.get(`${index}`) ?? false;
+    const isLiability = !isAsset;
+    const isSettlement =
+      (isLiability && drCrFlag === DrCrFlag.D) || (isAsset && drCrFlag === DrCrFlag.C);
+
+    const rate = isSettlement ? (waeRate ?? midRate) : midRate;
+
+    setRateTypes(prev => new Map(prev).set(index, isSettlement ? 'wae' : 'mid'));
+    setValue(`lines.${index}.exchangeRate`, rate);
+
+    const fcyAmt = watch(`lines.${index}.fcyAmt`) || 0;
+    if (fcyAmt > 0) calculateLcyFromFcy(index, fcyAmt);
   };
 
   // Submit handler
@@ -678,7 +713,15 @@ const TransactionForm = () => {
                                 {option.accountNo} - {option.acctName}
                               </Typography>
                               <Typography variant="body2" color="text.secondary">
-                                {option.accountType} Account
+                                {(() => {
+                                  const bal = balanceByAccountNo.get(option.accountNo);
+                                  const wae = bal?.wae;
+                                  const ccy = bal?.accountCcy;
+                                  if (ccy && ccy !== 'BDT') {
+                                    return `${option.accountType} Account • ${ccy} • WAE: ${wae !== undefined && wae !== null ? wae.toFixed(4) : 'N/A'}`;
+                                  }
+                                  return `${option.accountType} Account`;
+                                })()}
                               </Typography>
                             </Box>
                           </Box>
@@ -728,6 +771,46 @@ const TransactionForm = () => {
                     }}
                   />
                 </Grid>
+
+                {/* FCY accounts: show LCY available balance + WAE */}
+                {accountBalances.get(`${index}`)?.accountCcy && accountBalances.get(`${index}`)?.accountCcy !== 'BDT' && (
+                  <>
+                    <Grid item xs={12} md={6}>
+                      <TextField
+                        label="Available Balance (LCY)"
+                        type="text"
+                        fullWidth
+                        value={accountBalances.get(`${index}`)?.availableBalanceLcy?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                        InputProps={{
+                          readOnly: true,
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              BDT
+                            </InputAdornment>
+                          ),
+                        }}
+                        disabled={true}
+                        helperText="BDT equivalent available balance"
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <TextField
+                        label="WAE (LCY / FCY)"
+                        type="text"
+                        fullWidth
+                        value={(() => {
+                          const wae = accountBalances.get(`${index}`)?.wae;
+                          return wae !== undefined && wae !== null ? wae.toFixed(4) : 'N/A';
+                        })()}
+                        InputProps={{
+                          readOnly: true,
+                        }}
+                        disabled={true}
+                        helperText="Weighted Average Exchange Rate"
+                      />
+                    </Grid>
+                  </>
+                )}
 
                 {/* Current Day Transaction Summary */}
                 {accountBalances.get(`${index}`) && (
@@ -790,11 +873,20 @@ const TransactionForm = () => {
                           {...field}
                           labelId={`drcr-label-${index}`}
                           label="Dr/Cr"
+                          onChange={(e) => {
+                            field.onChange(e.target.value);
+                            // Auto-select WAE (settlement) vs Mid when Dr/Cr changes for USD
+                            applySettlementExchangeRate(index);
+                          }}
                         >
                           <MenuItem value={DrCrFlag.D}>Debit</MenuItem>
                           <MenuItem value={DrCrFlag.C}>Credit</MenuItem>
                         </Select>
-                        <FormHelperText>{errors.lines?.[index]?.drCrFlag?.message}</FormHelperText>
+                        <FormHelperText>
+                          {accountBalances.get(`${index}`)?.accountCcy === 'USD'
+                            ? 'Settlement: Liability Dr / Asset Cr → WAE; else Mid'
+                            : errors.lines?.[index]?.drCrFlag?.message}
+                        </FormHelperText>
                       </FormControl>
                     )}
                   />
@@ -909,6 +1001,9 @@ const TransactionForm = () => {
                           value={currentRateType}
                           onChange={(e) => handleRateTypeChange(index, e.target.value)}
                         >
+                          <MenuItem value="wae">
+                            Settlement (WAE){accountBalances.get(`${index}`)?.wae != null ? ` (${Number(accountBalances.get(`${index}`)?.wae).toFixed(4)})` : ''}
+                          </MenuItem>
                           <MenuItem value="mid">
                             Mid Rate{rates ? ` (${rates.midRate.toFixed(4)})` : ''}
                           </MenuItem>
@@ -925,7 +1020,7 @@ const TransactionForm = () => {
                         </Select>
                         <FormHelperText>
                           {isUsdAccount 
-                            ? '🔒 Fixed to Mid Rate for USD accounts'
+                            ? '🔒 Auto-selected: Settlement (WAE) or Non-Settlement (Mid) by Dr/Cr'
                             : isCurrencyUsd
                             ? 'Select which rate to apply'
                             : 'Only available for USD'}
@@ -941,6 +1036,8 @@ const TransactionForm = () => {
                     control={control}
                     render={({ field }) => {
                       const currency = watch(`lines.${index}.tranCcy`) || 'BDT';
+                      const wae = accountBalances.get(`${index}`)?.wae;
+                      const midRate = Number(field.value || 0);
                       return (
                         <TextField
                           {...field}
@@ -953,7 +1050,7 @@ const TransactionForm = () => {
                           error={!!errors.lines?.[index]?.exchangeRate}
                           helperText={
                             currency === 'USD'
-                              ? 'Auto-fetched from database'
+                              ? `Mid Rate: ${midRate ? midRate.toFixed(4) : 'N/A'} • WAE: ${wae !== undefined && wae !== null ? wae.toFixed(4) : 'N/A'}`
                               : 'Always 1 for BDT'
                           }
                           disabled={isLoading}

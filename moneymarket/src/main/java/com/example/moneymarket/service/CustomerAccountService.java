@@ -353,6 +353,9 @@ public class CustomerAccountService {
                 .accountCcy(entity.getAccountCcy())  // Account currency from Product (USD, BDT, etc.)
                 .interestRate(entity.getSubProduct().getEffectiveInterestRate())  // Interest rate from Sub-Product
                 .makerId(entity.getMakerId() != null ? entity.getMakerId() : "N/A")  // Handle null - field is @Transient until DB migration
+                .availableBalanceLcy(balanceDTO.getAvailableBalanceLcy())
+                .computedBalanceLcy(balanceDTO.getComputedBalanceLcy())
+                .wae(balanceDTO.getWae())
                 .build();
     }
 

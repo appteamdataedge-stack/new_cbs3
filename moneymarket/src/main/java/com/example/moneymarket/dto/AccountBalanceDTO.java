@@ -31,5 +31,9 @@ public class AccountBalanceDTO {
     private BigDecimal currentBalanceLcy;   // Current balance in BDT (from acct_bal_lcy)
     private BigDecimal availableBalanceLcy; // Available balance in BDT (from acct_bal_lcy)
     private BigDecimal computedBalanceLcy;  // Computed balance in BDT (converted from account currency)
+
+    // Weighted Average Exchange Rate (WAE) for FCY accounts
+    // Formula: Available_Balance_LCY / Available_Balance_FCY
+    private BigDecimal wae;
 }
 

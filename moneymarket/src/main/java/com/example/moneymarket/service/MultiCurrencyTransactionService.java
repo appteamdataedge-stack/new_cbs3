@@ -33,6 +33,7 @@ public class MultiCurrencyTransactionService {
     private final SystemDateService systemDateService;
     private final SettlementGainLossRepository settlementGainLossRepository;
     private final SettlementAlertService settlementAlertService;
+    private final ExchangeRateService exchangeRateService;
 
     // Position GL account mapping (Currency -> GL Account)
     private static final Map<String, String> POSITION_GL_MAP = Map.of(
@@ -60,46 +61,41 @@ public class MultiCurrencyTransactionService {
      *
      * @param transactions List of transaction lines
      * @param transactionType Type of transaction (BDT_ONLY, USD_ONLY, BDT_USD_MIX)
+     * @return Settlement gain/loss in LCY (positive = gain, negative = loss, zero = none)
      */
     @Transactional
-    public void processMultiCurrencyTransaction(List<TranTable> transactions,
+    public BigDecimal processMultiCurrencyTransaction(List<TranTable> transactions,
                                                CurrencyValidationService.TransactionType transactionType) {
         if (transactions == null || transactions.isEmpty()) {
-            return;
+            return BigDecimal.ZERO;
         }
 
         log.info("Processing MCT for transaction type: {}", transactionType);
 
         switch (transactionType) {
             case BDT_ONLY:
-                // No MCT processing for BDT-only transactions
                 log.debug("BDT-only transaction, skipping MCT processing");
-                break;
+                return BigDecimal.ZERO;
 
             case USD_ONLY:
-                // USD-only: Not a typical scenario, skip MCT
                 log.info("USD-only transaction detected, skipping MCT processing");
-                break;
+                return BigDecimal.ZERO;
 
             case BDT_USD_MIX:
-                // BDT-USD mix: Full MCT processing
                 log.info("Processing BDT-USD mixed transaction");
-                processMixedCurrencyTransaction(transactions);
-                break;
+                return processMixedCurrencyTransaction(transactions);
 
             default:
                 log.warn("Invalid transaction type, skipping MCT processing");
-                break;
+                return BigDecimal.ZERO;
         }
-
-        log.info("MCT processing completed");
     }
 
     /**
      * Process mixed BDT-USD transaction with proper pattern detection
+     * @return Settlement gain/loss in LCY (positive = gain, negative = loss, zero = none)
      */
-    private void processMixedCurrencyTransaction(List<TranTable> transactions) {
-        // Find the FCY (USD) transaction line
+    private BigDecimal processMixedCurrencyTransaction(List<TranTable> transactions) {
         TranTable fcyTransaction = transactions.stream()
             .filter(t -> "USD".equals(t.getTranCcy()))
             .findFirst()
@@ -107,25 +103,19 @@ public class MultiCurrencyTransactionService {
 
         if (fcyTransaction == null) {
             log.warn("No FCY transaction found in mixed currency transaction");
-            return;
+            return BigDecimal.ZERO;
         }
 
-        // Determine if this is a BUY or SELL transaction
-        // BUY: Customer FCY account is CREDITED (liability increases) - Pattern 1
-        // SELL: Customer FCY account is DEBITED (liability decreases) - Pattern 2, 3, 4
         boolean isBuyTransaction = fcyTransaction.getDrCrFlag() == DrCrFlag.C;
-
         String fcyAccount = fcyTransaction.getAccountNo();
         log.info("MCT Pattern Detection: Account={}, DrCr={}, Type={}",
             fcyAccount, fcyTransaction.getDrCrFlag(), isBuyTransaction ? "BUY" : "SELL");
 
         if (isBuyTransaction) {
-            // Pattern 1: Customer deposits FCY (BUY)
             processBuyTransaction(fcyTransaction);
-        } else {
-            // Pattern 2, 3, or 4: Customer withdraws FCY (SELL)
-            processSellTransaction(fcyTransaction);
+            return BigDecimal.ZERO;
         }
+        return processSellTransaction(fcyTransaction);
     }
 
     /**
@@ -148,55 +138,49 @@ public class MultiCurrencyTransactionService {
 
     /**
      * Process SELL transaction (Pattern 2, 3, 4: Customer withdraws FCY)
-     * - Post 4 Position GL entries at WAE rate (not deal rate!)
-     * - Calculate settlement gain/loss
+     * - Post 4 Position GL entries at WAE rate (transaction rate = WAE for settlement)
+     * - Settlement gain/loss = (WAE - Mid) × FCY (positive = gain, negative = loss)
      * - If gain/loss exists, post 2 additional entries
-     * - DO NOT update WAE Master (selling doesn't change WAE)
+     *
+     * @return Settlement gain/loss in LCY (positive = gain, negative = loss, zero = none)
      */
-    private void processSellTransaction(TranTable transaction) {
+    private BigDecimal processSellTransaction(TranTable transaction) {
         log.info("Processing SELL transaction (Pattern 2/3/4): {}", transaction.getTranId());
 
-        // Get current WAE rate
         String ccyPair = transaction.getTranCcy() + "/BDT";
         Optional<WaeMaster> waeMasterOpt = waeMasterRepository.findByCcyPair(ccyPair);
 
         if (waeMasterOpt.isEmpty()) {
             log.warn("WAE Master not found for {}, cannot process SELL transaction", ccyPair);
-            return;
+            return BigDecimal.ZERO;
         }
 
-        BigDecimal waeRate = waeMasterOpt.get().getWaeRate();
-        BigDecimal dealRate = transaction.getExchangeRate();
+        BigDecimal waeRate = transaction.getExchangeRate(); // Deal rate used = WAE for settlement
+        BigDecimal midRate = exchangeRateService.getExchangeRate(transaction.getTranCcy(), transaction.getTranDate());
         BigDecimal fcyAmt = transaction.getFcyAmt();
 
-        // Step 1: Post Position GL entries at WAE rate (not deal rate!)
+        // Settlement gain/loss: (WAE - Mid) × FCY → positive = gain, negative = loss
+        BigDecimal settlementGainLoss = waeRate.subtract(midRate).multiply(fcyAmt).setScale(2, RoundingMode.HALF_UP);
+
+        // Step 1: Post Position GL entries at WAE rate
         postPositionGLEntriesForSell(transaction, waeRate);
 
-        // Step 2: Calculate settlement gain/loss
-        BigDecimal settlementGainLoss = calculateSettlementGainLoss(dealRate, waeRate, fcyAmt);
-
-        // Step 3: If gain/loss exists, post additional entries
+        // Step 2: If gain/loss exists, post additional entries
         if (settlementGainLoss.compareTo(BigDecimal.ZERO) != 0) {
             boolean isGain = settlementGainLoss.compareTo(BigDecimal.ZERO) > 0;
-
             if (isGain) {
-                // Pattern 3: Withdrawal with GAIN
                 log.info("Pattern 3: SELL with GAIN of {}", settlementGainLoss);
                 postSettlementGain(transaction, settlementGainLoss);
             } else {
-                // Pattern 4: Withdrawal with LOSS
                 log.info("Pattern 4: SELL with LOSS of {}", settlementGainLoss.abs());
                 postSettlementLoss(transaction, settlementGainLoss.abs());
             }
         } else {
-            // Pattern 2: Withdrawal at WAE (no gain/loss)
             log.info("Pattern 2: SELL at WAE, no gain/loss");
         }
 
-        // Step 4: DO NOT update WAE Master for SELL transactions
-        log.debug("WAE Master not updated for SELL transaction (as per MCT rules)");
-
         log.info("SELL transaction processing completed");
+        return settlementGainLoss;
     }
 
     /**

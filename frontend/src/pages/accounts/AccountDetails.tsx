@@ -112,6 +112,13 @@ const AccountDetails = () => {
     return `${amount.toLocaleString()}`;
   };
 
+  const formatRate = (rate?: number) => {
+    if (rate === undefined || rate === null) return 'N/A';
+    return rate.toFixed(4);
+  };
+
+  const isFcyAccount = (account.accountCcy || 'BDT') !== 'BDT';
+
   return (
     <Box>
       <PageHeader
@@ -159,6 +166,38 @@ const AccountDetails = () => {
                 </Typography>
               </Paper>
             </Grid>
+
+            {/* FCY accounts: show LCY available balance + WAE */}
+            {isFcyAccount && (
+              <>
+                <Grid item xs={12} md={6}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Available Balance (LCY)
+                    </Typography>
+                    <Typography variant="h4">
+                      {formatAmount(account.availableBalanceLcy || 0)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      BDT equivalent available balance (real-time)
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      WAE (LCY / FCY)
+                    </Typography>
+                    <Typography variant="h4">
+                      {formatRate(account.wae)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      Weighted Average Exchange Rate
+                    </Typography>
+                  </Paper>
+                </Grid>
+              </>
+            )}
             
             {/* Show Loan Limit and Available Balance for Asset accounts (GL starting with "2") */}
             {account.glNum && account.glNum.startsWith('2') && (

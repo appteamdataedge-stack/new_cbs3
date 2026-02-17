@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -222,6 +223,8 @@ public class BalanceService {
         // MULTI-CURRENCY: For FCY accounts, sum FCY_Amt; for BDT accounts, sum LCY_Amt
         BigDecimal dateDebits;
         BigDecimal dateCredits;
+        BigDecimal dateDebitsLcy;
+        BigDecimal dateCreditsLcy;
 
         if ("BDT".equals(accountCcy)) {
             // BDT account: Use LCY amounts
@@ -229,6 +232,10 @@ public class BalanceService {
                     .orElse(BigDecimal.ZERO);
             dateCredits = tranTableRepository.sumCreditTransactionsForAccountOnDate(accountNo, systemDate)
                     .orElse(BigDecimal.ZERO);
+
+            // LCY = FCY for BDT
+            dateDebitsLcy = dateDebits;
+            dateCreditsLcy = dateCredits;
         } else {
             // FCY account (USD, EUR, etc.): Sum FCY amounts manually
             List<com.example.moneymarket.entity.TranTable> transactions =
@@ -242,6 +249,17 @@ public class BalanceService {
             dateCredits = transactions.stream()
                     .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
                     .map(com.example.moneymarket.entity.TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // LCY totals for the same transactions (Debit_Amount / Credit_Amount are already in BDT)
+            dateDebitsLcy = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+                    .map(t -> t.getDebitAmount() != null ? t.getDebitAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            dateCreditsLcy = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                    .map(t -> t.getCreditAmount() != null ? t.getCreditAmount() : BigDecimal.ZERO)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
 
@@ -280,12 +298,33 @@ public class BalanceService {
         // Get interest accrued from acct_bal_accrual table (latest closing balance)
         BigDecimal interestAccrued = getLatestInterestAccrued(accountNo);
 
-        // Get LCY (BDT) balances from acct_bal_lcy
-        BigDecimal currentBalanceLcy = getAccountBalanceLcy(accountNo, systemDate);
-        BigDecimal availableBalanceLcy = getAvailableBalanceLcy(accountNo, systemDate);
-        
-        // For computed balance LCY: Get from acct_bal_lcy if exists, otherwise use current balance LCY
-        BigDecimal computedBalanceLcy = currentBalanceLcy;
+        // LCY (BDT) real-time balances
+        // REQUIREMENT: Current LCY = Opening_Bal_lcy + Today's CR (LCY) - Today's DR (LCY)
+        BigDecimal previousDayOpeningBalanceLcy = getPreviousDayClosingBalanceLcy(accountNo, systemDate);
+
+        BigDecimal computedBalanceLcy = previousDayOpeningBalanceLcy
+                .add(dateCreditsLcy)
+                .subtract(dateDebitsLcy);
+
+        // Available balance LCY should mirror available balance logic (loan limit included for Asset accounts)
+        BigDecimal availableBalanceLcy;
+        if (isCustomerAccount && glNum != null && glNum.startsWith("2")) {
+            // If loanLimit is maintained in LCY for these accounts, it will work as-is.
+            // If loanLimit is in FCY (rare), this can be enhanced later with conversion.
+            availableBalanceLcy = previousDayOpeningBalanceLcy
+                    .add(loanLimit)
+                    .add(dateCreditsLcy)
+                    .subtract(dateDebitsLcy);
+        } else {
+            availableBalanceLcy = computedBalanceLcy;
+        }
+
+        BigDecimal currentBalanceLcy = computedBalanceLcy;
+
+        // Weighted Average Exchange Rate (WAE) for FCY accounts
+        // REQUIREMENT FORMULA: Current LCY Amount / Current FCY Amount
+        // Using computed balances (Opening + Today's CR - Today's DR) for both LCY and FCY.
+        BigDecimal wae = calculateWae(accountCcy, computedBalanceLcy, computedBalance);
 
         return com.example.moneymarket.dto.AccountBalanceDTO.builder()
                 .accountNo(accountNo)
@@ -301,7 +340,55 @@ public class BalanceService {
                 .currentBalanceLcy(currentBalanceLcy)      // Balance in BDT
                 .availableBalanceLcy(availableBalanceLcy)  // Available balance in BDT
                 .computedBalanceLcy(computedBalanceLcy)    // Computed balance in BDT
+                .wae(wae)
                 .build();
+    }
+
+    /**
+     * Get previous day's closing balance in LCY (BDT) for an account using 3-tier fallback logic.
+     *
+     * Tier 1: Previous day's record (systemDate - 1)
+     * Tier 2: Last available record (MAX(Tran_Date) < systemDate)
+     * Tier 3: New account (return 0)
+     */
+    private BigDecimal getPreviousDayClosingBalanceLcy(String accountNo, LocalDate systemDate) {
+        LocalDate previousDay = systemDate.minusDays(1);
+
+        Optional<AcctBalLcy> previousDayRecord = acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, previousDay);
+        if (previousDayRecord.isPresent()) {
+            BigDecimal closingBalLcy = previousDayRecord.get().getClosingBalLcy();
+            return closingBalLcy != null ? closingBalLcy : BigDecimal.ZERO;
+        }
+
+        // Tier 2: pick latest record strictly before systemDate
+        List<AcctBalLcy> balances = acctBalLcyRepository.findByAccountNoAndTranDateBeforeOrderByTranDateDesc(accountNo, systemDate);
+        if (balances.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal lastClosingBalLcy = balances.get(0).getClosingBalLcy();
+        return lastClosingBalLcy != null ? lastClosingBalLcy : BigDecimal.ZERO;
+    }
+
+    /**
+     * Calculate WAE (Weighted Average Exchange Rate) for FCY accounts.
+     *
+     * Formula: |Available_Balance_LCY| / |Available_Balance_FCY|
+     * Returns null for BDT accounts or when denominator is zero.
+     */
+    private BigDecimal calculateWae(String accountCcy, BigDecimal computedBalanceLcy, BigDecimal computedBalanceFcy) {
+        if (accountCcy == null || "BDT".equalsIgnoreCase(accountCcy)) {
+            return null;
+        }
+        if (computedBalanceLcy == null || computedBalanceFcy == null) {
+            return null;
+        }
+        if (computedBalanceFcy.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+
+        return computedBalanceLcy.abs()
+                .divide(computedBalanceFcy.abs(), 4, RoundingMode.HALF_UP);
     }
 
     /**

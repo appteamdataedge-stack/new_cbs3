@@ -77,6 +77,9 @@ export interface CustomerAccountResponseDTO {
   lastInterestPaymentDate?: string; // Date when interest was last capitalized
   interestBearing?: boolean;        // Whether the account's product is interest-bearing
   productName?: string;             // Product name
+  availableBalanceLcy?: number;     // Available balance in BDT (real-time)
+  computedBalanceLcy?: number;      // Computed balance in BDT (Prev Day LCY + Credits LCY - Debits LCY)
+  wae?: number;                     // Weighted Average Exchange Rate = availableBalanceLcy / availableBalance
   message?: string; // Optional message from API
 }
 
@@ -103,4 +106,13 @@ export interface OfficeAccountResponseDTO {
   branchCode: string;
   accountStatus: AccountStatus;
   reconciliationRequired: boolean;
+
+  // Balance & currency info (real-time, includes today's transactions)
+  accountCcy?: string;
+  currentBalance?: number;
+  availableBalance?: number;
+  computedBalance?: number;
+  availableBalanceLcy?: number;
+  computedBalanceLcy?: number;
+  wae?: number; // Weighted Average Exchange Rate = availableBalanceLcy / availableBalance (FCY only)
 }
