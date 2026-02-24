@@ -149,7 +149,7 @@ const InterestCapitalizationList = () => {
       label: 'Balance',
       minWidth: 120,
       align: 'right',
-      format: (value: number | null | undefined, row: CustomerAccountResponseDTO) => {
+      format: (_value: number | null | undefined, row: CustomerAccountResponseDTO) => {
         const balance = row.computedBalance ?? row.currentBalance ?? 0;
         return balance.toLocaleString();
       }

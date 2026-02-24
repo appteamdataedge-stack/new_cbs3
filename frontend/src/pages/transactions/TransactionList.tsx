@@ -27,7 +27,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { getAllTransactions, getTransactionById, verifyTransaction, postTransaction } from '../../api/transactionService';
+import { getAllTransactions, getTransactionById, verifyTransaction } from '../../api/transactionService';
 import { DataTable, PageHeader, StatusBadge, VerificationModal } from '../../components/common';
 import type { Column } from '../../components/common';
 import type { TransactionLineResponseDTO, TransactionResponseDTO } from '../../types';
@@ -294,35 +294,6 @@ const TransactionList = () => {
       open: false,
       tranId: null,
     });
-  };
-
-  // Handle transaction posting (Entry → Posted)
-  const handlePost = async (tranId: string) => {
-    try {
-      const result = await postTransaction(tranId);
-      
-      // Invalidate transaction queries
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      
-      // Invalidate account queries for all accounts involved in the transaction
-      // This ensures Account Details page and Account List show fresh balance data after posting
-      result.lines.forEach(line => {
-        queryClient.invalidateQueries({ queryKey: ['account', line.accountNo] });
-        queryClient.invalidateQueries({ queryKey: ['customerAccounts'] });
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Invalidate accounts list
-      });
-      
-      toast.success('Transaction posted successfully. Balances have been updated.');
-      if (result.settlementGainLoss != null && result.settlementGainLoss !== 0 && result.settlementGainLossType) {
-        const msg = result.settlementGainLossType === 'GAIN'
-          ? `Settlement Gain: ${result.settlementGainLoss.toFixed(2)} BDT`
-          : `Settlement Loss: ${result.settlementGainLoss.toFixed(2)} BDT`;
-        toast.info(msg);
-      }
-      refetch();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to post transaction');
-    }
   };
 
   // Handle transaction verification

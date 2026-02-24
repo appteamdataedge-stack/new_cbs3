@@ -80,6 +80,9 @@ export interface CustomerAccountResponseDTO {
   availableBalanceLcy?: number;     // Available balance in BDT (real-time)
   computedBalanceLcy?: number;      // Computed balance in BDT (Prev Day LCY + Credits LCY - Debits LCY)
   wae?: number;                     // Weighted Average Exchange Rate = availableBalanceLcy / availableBalance
+  accountCcy?: string;              // Account currency (BDT, USD, etc.)
+  interestRate?: number;            // Interest rate for the account's product
+  makerId?: string;                 // User ID who created the account
   message?: string; // Optional message from API
 }
 

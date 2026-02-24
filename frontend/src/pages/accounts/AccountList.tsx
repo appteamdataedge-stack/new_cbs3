@@ -136,7 +136,7 @@ const AccountList = () => {
       label: 'Current Balance', 
       minWidth: 120,
       align: 'right',
-      format: (value: number | null | undefined, row: CustomerAccountResponseDTO) => {
+      format: (_value: number | null | undefined, row: CustomerAccountResponseDTO) => {
         // Use computedBalance (real-time) if available, otherwise fallback to currentBalance
         // This matches the logic in AccountDetails component
         const balance = row.computedBalance ?? row.currentBalance ?? 0;
@@ -148,7 +148,7 @@ const AccountList = () => {
       label: 'Available Balance', 
       minWidth: 120,
       align: 'right',
-      format: (value: number | null | undefined, row: CustomerAccountResponseDTO) => {
+      format: (value: number | null | undefined, _row: CustomerAccountResponseDTO) => {
         // availableBalance already includes loan limit for Asset accounts (GL starting with "2")
         // This matches the logic in AccountDetails component
         const balance = value ?? 0;
