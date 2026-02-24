@@ -125,8 +125,18 @@ public class GLMovementUpdateService {
             throw new BusinessException("Account Number is missing for transaction: " + transaction.getTranId());
         }
 
-        // Determine account type and get GL Number
-        String glNum = getGLNumberForAccount(accountNo);
+        // Primary path: use GL_Num stored on the transaction row (populated at insert time).
+        // Fallback: look up from account-master tables for rows that pre-date V30 or were
+        //           inserted by services that do not yet set GL_Num.
+        String glNum;
+        if (transaction.getGlNum() != null && !transaction.getGlNum().trim().isEmpty()) {
+            glNum = transaction.getGlNum();
+            log.debug("Transaction {}: using GL_Num from tran_table -> {}", transaction.getTranId(), glNum);
+        } else {
+            glNum = getGLNumberForAccount(accountNo);
+            log.warn("Transaction {}: GL_Num not set on tran_table row, fell back to account-master lookup -> {}",
+                    transaction.getTranId(), glNum);
+        }
 
         // Look up GL_Setup record
         GLSetup glSetup = glSetupRepository.findById(glNum)

@@ -66,6 +66,9 @@ public class TranTable {
     @Column(name = "Pointing_Id")
     private Integer pointingId;
 
+    @Column(name = "GL_Num", length = 20)
+    private String glNum;
+
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL)
     private List<GLMovement> glMovements;
 

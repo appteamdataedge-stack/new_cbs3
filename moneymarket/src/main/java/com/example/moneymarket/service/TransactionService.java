@@ -27,6 +27,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -54,8 +55,14 @@ public class TransactionService {
     private final ValueDatePostingService valueDatePostingService;
     private final MultiCurrencyTransactionService multiCurrencyTransactionService;
     private final CurrencyValidationService currencyValidationService;
+    private final ExchangeRateService exchangeRateService;
 
     private final Random random = new Random();
+
+    /** FX Gain/Loss GL for FCY-FCY settlement (config: 140203002, 240203002) */
+    private static final String FX_GAIN_GL = "140203002";
+    private static final String FX_LOSS_GL = "240203002";
+    private static final String POSITION_GL_USD = "920101001";
 
     /**
      * Create a new transaction with Entry status (Maker-Checker workflow)
@@ -82,6 +89,8 @@ public class TransactionService {
         if ((transactionNarration == null || transactionNarration.isBlank()) && !transactionRequestDTO.getLines().isEmpty()) {
             transactionNarration = transactionRequestDTO.getLines().get(0).getUdf1();
         }
+
+        boolean isSettlement = isSettlementTransaction(transactionRequestDTO.getLines());
 
         // Process each transaction line - create in Entry status
         int lineNumber = 1;
@@ -116,7 +125,7 @@ public class TransactionService {
                 log.debug("BDT account {} - validating with LCY amount: {}", lineDTO.getAccountNo(), validationAmount);
             }
             
-            // Validate transaction with correct amount
+            // Validate transaction with correct amount (settlement: still validate FCY amount vs balance)
             try {
                 validationService.validateTransaction(
                         lineDTO.getAccountNo(), lineDTO.getDrCrFlag(), validationAmount);
@@ -125,6 +134,21 @@ public class TransactionService {
                         lineDTO.getAccountNo() + ": " + e.getMessage());
             }
             
+            // Per-account WAE for settlement (FCY) lines; otherwise use request rate
+            BigDecimal lcyAmt = lineDTO.getLcyAmt();
+            BigDecimal exchangeRate = lineDTO.getExchangeRate();
+            if (isSettlement && lineDTO.getTranCcy() != null && !"BDT".equals(lineDTO.getTranCcy())) {
+                BigDecimal lineWae = balanceService.getComputedAccountBalance(lineDTO.getAccountNo(), tranDate).getWae();
+                if (lineWae == null) {
+                    lineWae = exchangeRateService.getExchangeRate(lineDTO.getTranCcy(), tranDate);
+                }
+                exchangeRate = lineWae;
+                lcyAmt = lineDTO.getFcyAmt().multiply(lineWae).setScale(2, RoundingMode.HALF_UP);
+            }
+            
+            // Resolve GL_Num at insert time (avoids master-table join in EOD Step 4)
+            String lineGlNum = resolveGlNumForAccount(lineDTO.getAccountNo());
+
             // Create transaction record with Entry status
             String lineId = tranId + "-" + lineNumber++;
             TranTable transaction = TranTable.builder()
@@ -136,12 +160,13 @@ public class TransactionService {
                     .accountNo(lineDTO.getAccountNo())
                     .tranCcy(lineDTO.getTranCcy())
                     .fcyAmt(lineDTO.getFcyAmt())
-                    .exchangeRate(lineDTO.getExchangeRate())
-                    .lcyAmt(lineDTO.getLcyAmt())
-                    .debitAmount(lineDTO.getDrCrFlag() == DrCrFlag.D ? lineDTO.getLcyAmt() : BigDecimal.ZERO)
-                    .creditAmount(lineDTO.getDrCrFlag() == DrCrFlag.C ? lineDTO.getLcyAmt() : BigDecimal.ZERO)
+                    .exchangeRate(exchangeRate)
+                    .lcyAmt(lcyAmt)
+                    .debitAmount(lineDTO.getDrCrFlag() == DrCrFlag.D ? lcyAmt : BigDecimal.ZERO)
+                    .creditAmount(lineDTO.getDrCrFlag() == DrCrFlag.C ? lcyAmt : BigDecimal.ZERO)
                     .narration(lineDTO.getUdf1())
                     .udf1(null)
+                    .glNum(lineGlNum)
                     .build();
             
             transactions.add(transaction);
@@ -149,6 +174,34 @@ public class TransactionService {
         
         // Save all transaction lines
         tranTableRepository.saveAll(transactions);
+        
+        // Settlement: compute gain/loss from actual LCY totals (each line used its own WAE)
+        BigDecimal settlementGainLoss = BigDecimal.ZERO;
+        if (isSettlement && transactions.size() == 2) {
+            BigDecimal totalDrLcy = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+                    .map(TranTable::getLcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalCrLcy = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                    .map(TranTable::getLcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal netLcy = totalDrLcy.subtract(totalCrLcy).setScale(2, RoundingMode.HALF_UP);
+            if (netLcy.compareTo(BigDecimal.ZERO) != 0) {
+                BigDecimal absAmount = netLcy.abs();
+                boolean isGain = netLcy.compareTo(BigDecimal.ZERO) < 0; // net credit = gain
+                settlementGainLoss = isGain ? absAmount : absAmount.negate();
+                String baseId = tranId;
+                if (isGain) {
+                    transactions.add(TranTable.builder().tranId(baseId + "-3").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.D).tranStatus(TranStatus.Entry).accountNo(POSITION_GL_USD).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(absAmount).creditAmount(BigDecimal.ZERO).narration("FX Gain").udf1(null).glNum(POSITION_GL_USD).build());
+                    transactions.add(TranTable.builder().tranId(baseId + "-4").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.C).tranStatus(TranStatus.Entry).accountNo(FX_GAIN_GL).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(BigDecimal.ZERO).creditAmount(absAmount).narration("FX Gain").udf1(null).glNum(FX_GAIN_GL).build());
+                } else {
+                    transactions.add(TranTable.builder().tranId(baseId + "-3").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.D).tranStatus(TranStatus.Entry).accountNo(FX_LOSS_GL).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(absAmount).creditAmount(BigDecimal.ZERO).narration("FX Loss").udf1(null).glNum(FX_LOSS_GL).build());
+                    transactions.add(TranTable.builder().tranId(baseId + "-4").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.C).tranStatus(TranStatus.Entry).accountNo(POSITION_GL_USD).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(BigDecimal.ZERO).creditAmount(absAmount).narration("FX Loss").udf1(null).glNum(POSITION_GL_USD).build());
+                }
+                tranTableRepository.saveAll(transactions.subList(2, transactions.size()));
+            }
+        }
         
         // Create response
         String responseNarration = (transactionNarration != null && !transactionNarration.isBlank())
@@ -160,7 +213,10 @@ public class TransactionService {
 
         TransactionResponseDTO response = buildTransactionResponse(tranId, tranDate, valueDate, 
                 responseNarration, transactions);
-        
+        if (settlementGainLoss.compareTo(BigDecimal.ZERO) != 0) {
+            response.setSettlementGainLoss(settlementGainLoss.abs());
+            response.setSettlementGainLossType(settlementGainLoss.compareTo(BigDecimal.ZERO) > 0 ? "GAIN" : "LOSS");
+        }
         log.info("Transaction created with ID: {} in Entry status", tranId);
         return response;
     }
@@ -201,6 +257,11 @@ public class TransactionService {
 
         // Validate all transactions again before posting using new business rules
         for (TranTable transaction : transactions) {
+            // Skip balance validation for GL-only lines (FX Gain/Loss, Position GL)
+            if (glSetupRepository.findById(transaction.getAccountNo()).isPresent()) {
+                log.debug("Skipping account validation for GL-only line: {}", transaction.getAccountNo());
+                continue;
+            }
             try {
                 // ✅ CRITICAL FIX: Use account currency to determine validation amount
                 String accountCurrency = unifiedAccountService.getAccountCurrency(transaction.getAccountNo());
@@ -255,32 +316,33 @@ public class TransactionService {
             // Update status to Posted
             transaction.setTranStatus(TranStatus.Posted);
 
-            // Get GL number from account (customer or office)
-            String glNum = unifiedAccountService.getGlNum(transaction.getAccountNo());
+            String glNum;
+            Optional<GLSetup> glOpt = glSetupRepository.findById(transaction.getAccountNo());
+            if (glOpt.isPresent()) {
+                // GL-only line (e.g. FX Gain 140203002, FX Loss 240203002, Position 920101001)
+                glNum = transaction.getAccountNo();
+            } else {
+                glNum = unifiedAccountService.getGlNum(transaction.getAccountNo());
+            }
             GLSetup glSetup = glSetupRepository.findById(glNum)
                     .orElseThrow(() -> new ResourceNotFoundException("GL", "GL Number", glNum));
 
-            // Determine the correct amount for account balance update
-            // For BDT accounts: Use LCY_Amt
-            // For FCY accounts (USD, EUR, etc.): Use FCY_Amt
-            BigDecimal accountBalanceAmount;
-            if ("BDT".equals(transaction.getTranCcy())) {
-                // BDT transaction: Use LCY amount (same as FCY for BDT)
-                accountBalanceAmount = transaction.getLcyAmt();
-            } else {
-                // FCY transaction: Use FCY amount (account balance is in account's currency)
-                accountBalanceAmount = transaction.getFcyAmt();
+            if (!glOpt.isPresent()) {
+                // Customer/Office account: update account balance and GL
+                BigDecimal accountBalanceAmount;
+                if ("BDT".equals(transaction.getTranCcy())) {
+                    accountBalanceAmount = transaction.getLcyAmt();
+                } else {
+                    accountBalanceAmount = transaction.getFcyAmt();
+                }
+                validationService.updateAccountBalanceForTransaction(
+                        transaction.getAccountNo(), transaction.getDrCrFlag(), accountBalanceAmount);
             }
-
-            // Update account balance with validation
-            validationService.updateAccountBalanceForTransaction(
-                    transaction.getAccountNo(), transaction.getDrCrFlag(), accountBalanceAmount);
 
             // Update GL balance (ALWAYS in BDT)
             BigDecimal newGLBalance = balanceService.updateGLBalance(
                     glNum, transaction.getDrCrFlag(), transaction.getLcyAmt());
 
-            // Create GL movement record
             GLMovement glMovement = GLMovement.builder()
                     .transaction(transaction)
                     .glSetup(glSetup)
@@ -349,8 +411,11 @@ public class TransactionService {
         // First, post the main transaction using normal logic
         TransactionResponseDTO response = postCurrentTransaction(tranId, transactions);
 
-        // Calculate and post interest adjustments for each line
+        // Calculate and post interest adjustments for each line (skip GL-only lines)
         for (TranTable transaction : transactions) {
+            if (glSetupRepository.findById(transaction.getAccountNo()).isPresent()) {
+                continue;
+            }
             LocalDate valueDate = transaction.getValueDate();
             int daysDifference = valueDateValidationService.calculateDaysDifference(valueDate);
 
@@ -499,12 +564,14 @@ public class TransactionService {
                     .build();
             
             reversalTransactions.add(reversalTran);
-            
+
             // Get GL number from account
             CustAcctMaster account = custAcctMasterRepository.findById(original.getAccountNo())
                     .orElseThrow(() -> new ResourceNotFoundException("Account", "Account Number", original.getAccountNo()));
 
             String glNum = account.getGlNum();
+            // Persist GL_Num on the reversal row so EOD Step 4 can use it directly
+            reversalTran.setGlNum(glNum);
             GLSetup glSetup = glSetupRepository.findById(glNum)
                     .orElseThrow(() -> new ResourceNotFoundException("GL", "GL Number", glNum));
 
@@ -625,23 +692,71 @@ public class TransactionService {
     }
 
     /**
-     * Validate that the transaction is balanced (debit equals credit)
-     * 
-     * @param transactionRequestDTO The transaction data
+     * Validate that the transaction is balanced (debit equals credit in LCY, or FCY for settlement).
+     * Settlement (FCY-FCY): Liability Dr + Asset Cr — allow when FCY amounts match; LCY difference = gain/loss.
      */
     private void validateTransactionBalance(TransactionRequestDTO transactionRequestDTO) {
-        BigDecimal totalDebits = transactionRequestDTO.getLines().stream()
+        List<TransactionLineDTO> lines = transactionRequestDTO.getLines();
+        if (lines.size() == 2 && isSettlementTransaction(lines)) {
+            BigDecimal fcyDr = lines.stream().filter(l -> l.getDrCrFlag() == DrCrFlag.D).map(TransactionLineDTO::getFcyAmt).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal fcyCr = lines.stream().filter(l -> l.getDrCrFlag() == DrCrFlag.C).map(TransactionLineDTO::getFcyAmt).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (fcyDr.compareTo(fcyCr) != 0) {
+                throw new BusinessException("Settlement transaction: FCY debit must equal FCY credit. Please correct the entries.");
+            }
+            return;
+        }
+        BigDecimal totalDebits = lines.stream()
                 .filter(line -> line.getDrCrFlag() == DrCrFlag.D)
                 .map(TransactionLineDTO::getLcyAmt)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-                
-        BigDecimal totalCredits = transactionRequestDTO.getLines().stream()
+        BigDecimal totalCredits = lines.stream()
                 .filter(line -> line.getDrCrFlag() == DrCrFlag.C)
                 .map(TransactionLineDTO::getLcyAmt)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-                
         if (totalDebits.compareTo(totalCredits) != 0) {
             throw new BusinessException("Debit amount does not equal credit amount. Please correct the entries.");
+        }
+    }
+
+    /**
+     * Settlement = 2 lines, same FCY (e.g. USD), one Liability Debit + one Asset Credit. GL 1xxx = Liability, 2xxx = Asset.
+     */
+    private boolean isSettlementTransaction(List<TransactionLineDTO> lines) {
+        if (lines == null || lines.size() != 2) return false;
+        String ccy = lines.get(0).getTranCcy();
+        if (ccy == null || "BDT".equals(ccy)) return false;
+        if (!ccy.equals(lines.get(1).getTranCcy())) return false;
+        try {
+            UnifiedAccountService.AccountInfo info0 = unifiedAccountService.getAccountInfo(lines.get(0).getAccountNo());
+            UnifiedAccountService.AccountInfo info1 = unifiedAccountService.getAccountInfo(lines.get(1).getAccountNo());
+            boolean liabilityDr = info0.isLiabilityAccount() && lines.get(0).getDrCrFlag() == DrCrFlag.D;
+            boolean assetCr = info1.isAssetAccount() && lines.get(1).getDrCrFlag() == DrCrFlag.C;
+            if (liabilityDr && assetCr) return true;
+            liabilityDr = info1.isLiabilityAccount() && lines.get(1).getDrCrFlag() == DrCrFlag.D;
+            assetCr = info0.isAssetAccount() && lines.get(0).getDrCrFlag() == DrCrFlag.C;
+            return liabilityDr && assetCr;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Resolve the GL number for any account number at transaction creation time.
+     * Checks GL_setup first (GL-only lines such as FX Gain/Loss and Position GL),
+     * then falls back to the unified account service (customer / office accounts).
+     *
+     * @param accountNo The account number to resolve
+     * @return The GL number, or null if it cannot be resolved (Step 4 fallback will handle it)
+     */
+    private String resolveGlNumForAccount(String accountNo) {
+        if (glSetupRepository.existsById(accountNo)) {
+            return accountNo;
+        }
+        try {
+            return unifiedAccountService.getGlNum(accountNo);
+        } catch (Exception e) {
+            log.warn("Could not resolve GL_Num for account {} at insert time: {}", accountNo, e.getMessage());
+            return null;
         }
     }
 
@@ -649,7 +764,7 @@ public class TransactionService {
      * Generate a unique transaction ID (max 20 characters)
      * Format: TyyyyMMddHHmmssSSS (20 chars max)
      * Example: T20251009120530123
-     * 
+     *
      * @return The transaction ID
      */
     private String generateTransactionId() {
