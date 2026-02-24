@@ -121,7 +121,7 @@ const TransactionForm = () => {
 
   // Calculate totals dynamically - useMemo ensures instant updates
   // ✅ FIX ISSUE 2: Calculate totals in correct currency (FCY for USD, LCY for BDT)
-  const { totalDebit, totalCredit, isBalanced, displayCurrency, totalDebitFcy, totalCreditFcy } = useMemo(() => {
+  const { totalDebit, totalCredit, isBalanced, isSettlement, displayCurrency, totalDebitFcy, totalCreditFcy } = useMemo(() => {
     let debitTotalLcy = 0;
     let creditTotalLcy = 0;
     let debitTotalFcy = 0;
@@ -160,8 +160,10 @@ const TransactionForm = () => {
     debitTotalFcy = Math.round(debitTotalFcy * 100) / 100;
     creditTotalFcy = Math.round(creditTotalFcy * 100) / 100;
 
-    // Balance check is always on LCY
+    // Balance check: LCY for normal; for settlement (2 USD lines) FCY match is enough
     const balanced = Math.abs(debitTotalLcy - creditTotalLcy) < 0.01;
+    const fcyBalanced = Math.abs(debitTotalFcy - creditTotalFcy) < 0.01;
+    const isSettlement = linesToCalculate.length === 2 && allAccountsUSD && fcyBalanced;
 
     // Determine display currency
     const currency = allAccountsUSD ? 'USD' : 'BDT';
@@ -174,7 +176,8 @@ const TransactionForm = () => {
       creditTotalFcy, 
       balanced,
       currency,
-      allAccountsUSD 
+      allAccountsUSD,
+      isSettlement
     });
 
     return {
@@ -183,6 +186,7 @@ const TransactionForm = () => {
       totalDebitFcy: debitTotalFcy,
       totalCreditFcy: creditTotalFcy,
       isBalanced: balanced,
+      isSettlement,
       displayCurrency: currency
     };
   }, [watchedLines, accountBalances]);
@@ -291,6 +295,12 @@ const TransactionForm = () => {
       
       toast.success(`Transaction created successfully with status: ${data.status}. Transaction ID: ${data.tranId}`);
       toast.info('Transaction is in Entry status. It needs to be Posted by a Checker to update balances.');
+      if (data.settlementGainLoss != null && data.settlementGainLoss !== 0 && data.settlementGainLossType) {
+        const msg = data.settlementGainLossType === 'GAIN'
+          ? `FX Gain: ${Number(data.settlementGainLoss).toFixed(2)} BDT`
+          : `FX Loss: ${Number(data.settlementGainLoss).toFixed(2)} BDT`;
+        toast.info(msg);
+      }
       navigate('/transactions');
     },
     onError: (error: Error) => {
@@ -538,34 +548,37 @@ const TransactionForm = () => {
       }
     }
 
-    // ✅ CRITICAL FIX: Calculate totals in LCY for backend validation
-    // BUT use account currency for frontend display
+    // Calculate totals: LCY for normal; for settlement (2 USD, FCY match) allow LCY mismatch
     let debitTotal = 0;
     let creditTotal = 0;
-    
+    let debitTotalFcy = 0;
+    let creditTotalFcy = 0;
     data.lines.forEach(line => {
-      // Backend expects LCY totals to be balanced
-      const amount = parseFloat(String(line.lcyAmt));
+      const lcy = parseFloat(String(line.lcyAmt));
+      const fcy = parseFloat(String(line.fcyAmt || 0));
       if (line.drCrFlag === DrCrFlag.D) {
-        debitTotal += amount;
+        debitTotal += lcy;
+        debitTotalFcy += fcy;
       } else if (line.drCrFlag === DrCrFlag.C) {
-        creditTotal += amount;
+        creditTotal += lcy;
+        creditTotalFcy += fcy;
       }
     });
-
-    // Round to 2 decimal places to avoid floating point precision issues
     debitTotal = Math.round(debitTotal * 100) / 100;
     creditTotal = Math.round(creditTotal * 100) / 100;
+    debitTotalFcy = Math.round(debitTotalFcy * 100) / 100;
+    creditTotalFcy = Math.round(creditTotalFcy * 100) / 100;
 
-    console.log('Transaction validation:', {
-      debitTotal,
-      creditTotal,
-      difference: Math.abs(debitTotal - creditTotal),
-      isBalanced: debitTotal === creditTotal
-    });
+    const isSettlementSubmit = data.lines.length === 2 && data.lines.every((l: any) => (l.tranCcy || '') === 'USD');
+    const fcyMatch = Math.abs(debitTotalFcy - creditTotalFcy) < 0.01;
 
-    // Ensure debit equals credit before submitting (LCY must balance)
-    if (debitTotal !== creditTotal) {
+    if (isSettlementSubmit) {
+      if (!fcyMatch) {
+        toast.error(`Settlement transaction: FCY debit must equal FCY credit. Debit: ${debitTotalFcy.toFixed(2)} USD, Credit: ${creditTotalFcy.toFixed(2)} USD`);
+        return;
+      }
+      // Allow submit; LCY difference will be posted as Gain/Loss
+    } else if (Math.abs(debitTotal - creditTotal) >= 0.01) {
       toast.error(`Transaction is not balanced. Debit: ${debitTotal.toFixed(2)} BDT, Credit: ${creditTotal.toFixed(2)} BDT`);
       return;
     }
@@ -1247,9 +1260,14 @@ const TransactionForm = () => {
                 : 'Note: For BDT accounts, all amounts are in BDT (LCY = FCY).'
               }
             </Typography>
+            {isSettlement && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                Settlement transaction – LCY difference will be posted as Gain/Loss.
+              </Alert>
+            )}
           </Paper>
 
-          {!isBalanced && (
+          {!isBalanced && !isSettlement && (
             <Alert severity="warning" sx={{ mt: 2 }}>
               Transaction is not balanced. Total debit must equal total credit.
             </Alert>
@@ -1268,7 +1286,7 @@ const TransactionForm = () => {
           <Button
             type="submit"
             variant="contained"
-            disabled={isLoading || !isBalanced || fields.length < 2}
+            disabled={isLoading || (!isBalanced && !isSettlement) || fields.length < 2}
             startIcon={isLoading ? <CircularProgress size={20} /> : <SaveIcon />}
           >
             Create Transaction (Entry)

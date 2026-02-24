@@ -18,6 +18,11 @@ public interface InttAccrTranRepository extends JpaRepository<InttAccrTran, Stri
     List<InttAccrTran> findByAccountNo(String accountNo);
     
     List<InttAccrTran> findByStatus(AccrualStatus status);
+
+    /**
+     * Count interest accrual records that are not in the given status (e.g. unverified when status is Verified)
+     */
+    Long countByStatusNot(AccrualStatus status);
     
     List<InttAccrTran> findByAccrualDate(LocalDate accrualDate);
     

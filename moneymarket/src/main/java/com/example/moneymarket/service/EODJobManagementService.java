@@ -32,6 +32,7 @@ public class EODJobManagementService {
     private final FinancialReportsService financialReportsService;
     private final RevaluationService revaluationService;
     private final EODOrchestrationService eodOrchestrationService;
+    private final EODVerificationService eodVerificationService;
 
     // Self-reference for Spring AOP proxy to enable @Transactional on methods called within same class
     // @Lazy breaks the circular dependency
@@ -49,6 +50,7 @@ public class EODJobManagementService {
             FinancialReportsService financialReportsService,
             RevaluationService revaluationService,
             EODOrchestrationService eodOrchestrationService,
+            EODVerificationService eodVerificationService,
             @Lazy EODJobManagementService self) {
         this.eodLogTableRepository = eodLogTableRepository;
         this.systemDateService = systemDateService;
@@ -61,6 +63,7 @@ public class EODJobManagementService {
         this.financialReportsService = financialReportsService;
         this.revaluationService = revaluationService;
         this.eodOrchestrationService = eodOrchestrationService;
+        this.eodVerificationService = eodVerificationService;
         this.self = self;
     }
 
@@ -93,6 +96,28 @@ public class EODJobManagementService {
             if (!previousJobCheck.isSuccess()) {
                 return EODJobResult.previousJobNotCompleted(jobNumber, jobName, previousJobCheck.getMessage());
             }
+        }
+
+        // Before EOD Step 1 (Account Balance Update), block if unverified transactions exist (interest capitalizations not blocking)
+        if (jobNumber == 1 && !eodVerificationService.canProceedWithEOD()) {
+            EODVerificationService.VerificationStatusDTO verification = eodVerificationService.getVerificationStatus();
+            String message = String.format(
+                    "Cannot start EOD: %d unverified transaction(s) must be verified before running EOD. (Interest capitalizations: %d — not blocking.)",
+                    verification.getUnverifiedTransactions(),
+                    verification.getUnverifiedInterestCapitalizations());
+            log.warn("EOD Job 1 blocked: {}", message);
+            return EODJobResult.failure(1, jobName, message);
+        }
+
+        // Before EOD Step 5 (GL Balance Update), same rule: block only on unverified transactions; ignore interest capitalizations
+        if (jobNumber == 5 && !eodVerificationService.canProceedWithEOD()) {
+            EODVerificationService.VerificationStatusDTO verification = eodVerificationService.getVerificationStatus();
+            String message = String.format(
+                    "Cannot run GL Balance Update: %d unverified transaction(s) must be verified first. (Interest capitalizations: %d — not blocking.)",
+                    verification.getUnverifiedTransactions(),
+                    verification.getUnverifiedInterestCapitalizations());
+            log.warn("EOD Job 5 blocked: {}", message);
+            return EODJobResult.failure(5, jobName, message);
         }
 
         // Log job start in a separate transaction (use self to invoke proxy)

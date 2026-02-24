@@ -31,6 +31,11 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
     Long countByTranStatus(TranStatus status);
 
     /**
+     * Count transactions that are not in the given status (e.g. unverified when status is Verified)
+     */
+    Long countByTranStatusNot(TranStatus status);
+
+    /**
      * Delete all transactions with a specific status (all dates)
      * Used by Batch Job 1 to delete all Entry status transactions at EOD
      *

@@ -42,52 +42,52 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
     @Query(value = """
         SELECT DISTINCT gl.GL_Num
         FROM gl_setup gl
-        WHERE gl.GL_Num IN (
+        WHERE gl.GL_Num COLLATE utf8mb4_unicode_ci IN (
             -- Get GLs from sub-products that have customer accounts
-            SELECT DISTINCT sp.Cum_GL_Num
+            SELECT DISTINCT sp.Cum_GL_Num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN cust_acct_master ca ON ca.Sub_Product_Id = sp.Sub_Product_Id
-            
+
             UNION
-            
+
             -- Get GLs from sub-products that have office accounts
-            SELECT DISTINCT sp.Cum_GL_Num
+            SELECT DISTINCT sp.Cum_GL_Num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
-            
+
             UNION
-            
+
             -- Get interest receivable/expenditure GLs from sub-products with customer accounts
-            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num
+            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN cust_acct_master ca ON ca.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_receivable_expenditure_gl_num IS NOT NULL
-            
+
             UNION
-            
+
             -- Get interest income/payable GLs from sub-products with customer accounts
-            SELECT DISTINCT sp.interest_income_payable_gl_num
+            SELECT DISTINCT sp.interest_income_payable_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN cust_acct_master ca ON ca.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_income_payable_gl_num IS NOT NULL
-            
+
             UNION
-            
+
             -- Get interest receivable/expenditure GLs from sub-products with office accounts
-            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num
+            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_receivable_expenditure_gl_num IS NOT NULL
-            
+
             UNION
-            
+
             -- Get interest income/payable GLs from sub-products with office accounts
-            SELECT DISTINCT sp.interest_income_payable_gl_num
+            SELECT DISTINCT sp.interest_income_payable_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_income_payable_gl_num IS NOT NULL
         )
-        ORDER BY gl.GL_Num
+        ORDER BY gl.GL_Num COLLATE utf8mb4_unicode_ci
         """, nativeQuery = true)
     List<String> findActiveGLNumbersWithAccounts();
 
@@ -103,9 +103,9 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
     @Query(value = """
         SELECT DISTINCT gl.GL_Num
         FROM gl_setup gl
-        WHERE gl.GL_Num IN (
+        WHERE gl.GL_Num COLLATE utf8mb4_unicode_ci IN (
             -- Main GLs (Cum_GL_Num) from sub-products with customer accounts
-            SELECT DISTINCT sp.Cum_GL_Num
+            SELECT DISTINCT sp.Cum_GL_Num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN cust_acct_master ca ON ca.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.Cum_GL_Num LIKE '1%' OR sp.Cum_GL_Num LIKE '2%'
@@ -113,7 +113,7 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
             UNION
 
             -- Main GLs (Cum_GL_Num) from sub-products with office accounts
-            SELECT DISTINCT sp.Cum_GL_Num
+            SELECT DISTINCT sp.Cum_GL_Num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.Cum_GL_Num LIKE '1%' OR sp.Cum_GL_Num LIKE '2%'
@@ -121,7 +121,7 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
             UNION
 
             -- Interest receivable/expenditure GLs from sub-products with customer accounts
-            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num
+            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN cust_acct_master ca ON ca.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_receivable_expenditure_gl_num IS NOT NULL
@@ -130,7 +130,7 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
             UNION
 
             -- Interest income/payable GLs from sub-products with customer accounts
-            SELECT DISTINCT sp.interest_income_payable_gl_num
+            SELECT DISTINCT sp.interest_income_payable_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN cust_acct_master ca ON ca.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_income_payable_gl_num IS NOT NULL
@@ -139,7 +139,7 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
             UNION
 
             -- Interest receivable/expenditure GLs from sub-products with office accounts
-            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num
+            SELECT DISTINCT sp.interest_receivable_expenditure_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_receivable_expenditure_gl_num IS NOT NULL
@@ -148,14 +148,14 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
             UNION
 
             -- Interest income/payable GLs from sub-products with office accounts
-            SELECT DISTINCT sp.interest_income_payable_gl_num
+            SELECT DISTINCT sp.interest_income_payable_gl_num COLLATE utf8mb4_unicode_ci
             FROM sub_prod_master sp
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_income_payable_gl_num IS NOT NULL
             AND (sp.interest_income_payable_gl_num LIKE '1%' OR sp.interest_income_payable_gl_num LIKE '2%')
         )
         AND (gl.GL_Num LIKE '1%' OR gl.GL_Num LIKE '2%')
-        ORDER BY gl.GL_Num
+        ORDER BY gl.GL_Num COLLATE utf8mb4_unicode_ci
         """, nativeQuery = true)
     List<String> findBalanceSheetGLNumbersWithAccounts();
 }

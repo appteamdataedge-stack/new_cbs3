@@ -45,6 +45,7 @@ public class BalanceService {
     private final TranTableRepository tranTableRepository;
     private final SystemDateService systemDateService;
     private final AccountBalanceUpdateService accountBalanceUpdateService;
+    private final ExchangeRateService exchangeRateService;
 
     /**
      * Update account balance for a transaction with pessimistic locking to prevent races
@@ -322,9 +323,8 @@ public class BalanceService {
         BigDecimal currentBalanceLcy = computedBalanceLcy;
 
         // Weighted Average Exchange Rate (WAE) for FCY accounts
-        // REQUIREMENT FORMULA: Current LCY Amount / Current FCY Amount
-        // Using computed balances (Opening + Today's CR - Today's DR) for both LCY and FCY.
-        BigDecimal wae = calculateWae(accountCcy, computedBalanceLcy, computedBalance);
+        // REQUIREMENT FORMULA: computedBalanceLcy / computedBalanceFCY (avoid zero division; fallback to mid if FCY zero)
+        BigDecimal wae = calculateWae(accountCcy, computedBalanceLcy, computedBalance, systemDate);
 
         return com.example.moneymarket.dto.AccountBalanceDTO.builder()
                 .accountNo(accountNo)
@@ -372,11 +372,10 @@ public class BalanceService {
 
     /**
      * Calculate WAE (Weighted Average Exchange Rate) for FCY accounts.
-     *
-     * Formula: |Available_Balance_LCY| / |Available_Balance_FCY|
-     * Returns null for BDT accounts or when denominator is zero.
+     * Formula: computedBalanceLcy / computedBalanceFCY (4 decimal places).
+     * When FCY balance is zero, returns mid rate for the currency so WAE is defined.
      */
-    private BigDecimal calculateWae(String accountCcy, BigDecimal computedBalanceLcy, BigDecimal computedBalanceFcy) {
+    private BigDecimal calculateWae(String accountCcy, BigDecimal computedBalanceLcy, BigDecimal computedBalanceFcy, LocalDate systemDate) {
         if (accountCcy == null || "BDT".equalsIgnoreCase(accountCcy)) {
             return null;
         }
@@ -384,9 +383,13 @@ public class BalanceService {
             return null;
         }
         if (computedBalanceFcy.compareTo(BigDecimal.ZERO) == 0) {
-            return null;
+            try {
+                return exchangeRateService.getExchangeRate(accountCcy, systemDate);
+            } catch (Exception e) {
+                log.debug("WAE fallback: could not get mid rate for {} on {}, returning null", accountCcy, systemDate);
+                return null;
+            }
         }
-
         return computedBalanceLcy.abs()
                 .divide(computedBalanceFcy.abs(), 4, RoundingMode.HALF_UP);
     }

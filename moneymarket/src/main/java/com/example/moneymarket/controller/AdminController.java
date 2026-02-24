@@ -5,6 +5,7 @@ import com.example.moneymarket.service.AccountBalanceUpdateService;
 import com.example.moneymarket.service.SystemDateService;
 import com.example.moneymarket.service.EODOrchestrationService;
 import com.example.moneymarket.service.EODValidationService;
+import com.example.moneymarket.service.EODVerificationService;
 import com.example.moneymarket.service.FinancialReportsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +35,7 @@ public class AdminController {
     private final SystemDateService systemDateService;
     private final EODOrchestrationService eodOrchestrationService;
     private final EODValidationService eodValidationService;
+    private final EODVerificationService eodVerificationService;
     private final com.example.moneymarket.service.InterestAccrualGLMovementService interestAccrualGLMovementService;
     private final com.example.moneymarket.service.GLMovementUpdateService glMovementUpdateService;
     private final com.example.moneymarket.service.GLBalanceUpdateService glBalanceUpdateService;
@@ -288,6 +290,15 @@ public class AdminController {
     @PostMapping("/eod/batch/gl-balance")
     public ResponseEntity<Map<String, Object>> executeGLBalance() {
         try {
+            // Block only on unverified transactions; ignore interest capitalizations (same as Balance Update step)
+            if (!eodVerificationService.canProceedWithEOD()) {
+                EODVerificationService.VerificationStatusDTO verification = eodVerificationService.getVerificationStatus();
+                String message = String.format(
+                        "Cannot run GL Balance Update: %d unverified transaction(s) must be verified first. (Interest capitalizations: %d — not blocking.)",
+                        verification.getUnverifiedTransactions(),
+                        verification.getUnverifiedInterestCapitalizations());
+                return createErrorResponse(message);
+            }
             LocalDate systemDate = eodOrchestrationService.getSystemDate();
             int recordsProcessed = glBalanceUpdateService.updateGLBalances(systemDate);
 

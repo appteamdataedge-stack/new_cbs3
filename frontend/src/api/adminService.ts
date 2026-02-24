@@ -235,6 +235,25 @@ export const getEODJobStatus = async (jobNumber: number): Promise<EODJobStatus> 
   });
 };
 
+/**
+ * Pre-EOD verification status. Call before starting EOD Step 1.
+ * If canProceedWithEOD is false, block EOD and show pending items.
+ */
+export interface EODVerificationStatus {
+  unverifiedTransactions: number;
+  unverifiedCustomerAccounts: number;
+  unverifiedOfficeAccounts: number;
+  unverifiedInterestCapitalizations: number;
+  canProceedWithEOD: boolean;
+}
+
+export const getEODVerificationStatus = async (): Promise<EODVerificationStatus> => {
+  return apiRequest<EODVerificationStatus>({
+    method: 'GET',
+    url: '/admin/eod/jobs/verification-status',
+  });
+};
+
 // ============================================
 // BOD (Beginning of Day) API Functions
 // ============================================

@@ -20,15 +20,13 @@ import java.time.LocalDateTime;
  * Customer Account Number (12 digits):
  * - First 8 digits = Primary Cust_Id
  * - 9th digit = Product category digit (based on Product GL_Num):
- *   1 = GL 110101000 (Savings Bank)
- *   2 = GL 110102000 (Current Account)
- *   3 = GL 110201000 (Term Deposit)
- *   4 = GL 130101000 (Interest Payable SB)
- *   5 = GL 140101000 (Overdraft Interest Income)
- *   6 = GL 210201000 (Overdraft)
- *   7 = GL 240101000 (Interest Expenditure SB)
- *   8 = GL 110203000 (Term Deposit FCY USD)
- *   9 = GL 210102000 (Short Term Loan)
+ *   1 = SB (GL: 110101xxx)
+ *   2 = CA (GL: 110102xxx)
+ *   3 = TD (GL: 110201xxx)
+ *   4 = RD
+ *   5 = OD/CC (GL: 210201xxx)
+ *   6 = TL
+ *   7 = All others (EEFC 110103xxx, USD savings 110203xxx, etc.)
  * - Last 3 digits = running sequence 001–999 per product per customer
  * 
  * Office Accounts:
@@ -208,19 +206,21 @@ public class AccountNumberService {
         }
         
         // Map Product GL_Num to 9th digit based on business rules
+        // 1=SB, 2=CA, 3=TD, 4=RD, 5=OD/CC, 6=TL, 7=All others (EEFC, USD savings, etc.)
         switch (glNum) {
-            case "110101000": return '1'; // Savings Bank
-            case "110102000": return '2'; // Current Account
-            case "110201000": return '3'; // Term Deposit
-            case "130101000": return '4'; // Interest Payable SB
-            case "140101000": return '5'; // Overdraft Interest Income
-            case "210201000": return '6'; // Overdraft
-            case "240101000": return '7'; // Interest Expenditure SB
-            case "110203000": return '8'; // Term Deposit FCY USD
-            case "210102000": return '9'; // Short Term Loan
+            case "110101000": return '1'; // SB (Savings Bank)
+            case "110102000": return '2'; // CA (Current Account)
+            case "110201000": return '3'; // TD (Term Deposit)
+            case "130101000": return '4'; // RD
+            case "210201000": return '5'; // OD/CC (Overdraft/Cash Credit)
+            case "210102000": return '6'; // TL (Term Loan / Short Term Loan)
+            case "110103000": return '7'; // EEFC (All others)
+            case "110203000": return '7'; // Term Deposit FCY USD (All others)
+            case "240101000": return '7'; // Interest Expenditure SB (All others)
+            case "140101000": return '7'; // Overdraft Interest Income (All others)
             default:
                 throw new BusinessException("Cannot determine product type code for Product GL_Num: " + glNum +
-                    ". Supported GL_Nums: 110101000, 110102000, 110201000, 130101000, 140101000, 210201000, 240101000, 110203000, 210102000");
+                    ". Supported GL_Nums: 110101000, 110102000, 110201000, 130101000, 140101000, 210201000, 240101000, 110103000, 110203000, 210102000");
         }
     }
 }

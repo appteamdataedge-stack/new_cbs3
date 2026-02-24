@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(cd /c/new_cbs3/cbs3/moneymarket && ./mvnw spring-boot:run 2>&1)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill:*)",
+      "Bash(cd /c/new_cbs3/cbs3/frontend && npm run dev 2>&1)",
+      "Bash(echo no yml at root:*)",
+      "Bash(head:*)",
+      "Bash(vercel:*)",
+      "Bash(cd /c/new_cbs3/cbs3/frontend && npm run build 2>&1)"
+    ]
+  }
+}

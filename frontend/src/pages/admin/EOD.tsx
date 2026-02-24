@@ -13,6 +13,10 @@ import {
   CardContent,
   CircularProgress,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   Grid,
   Typography,
@@ -27,7 +31,9 @@ import {
   getEODStatus,
   getEODJobStatuses,
   executeEODJob,
-  type EODJobStatus
+  getEODVerificationStatus,
+  type EODJobStatus,
+  type EODVerificationStatus
 } from '../../api/adminService';
 import {
   downloadTrialBalance,
@@ -54,6 +60,10 @@ const EOD = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [downloadProgress, setDownloadProgress] = useState<string>('');
+  const [verificationBlockDialog, setVerificationBlockDialog] = useState<{
+    open: boolean;
+    data: EODVerificationStatus | null;
+  }>({ open: false, data: null });
 
   // Fetch system date and job statuses from backend when component mounts
   useEffect(() => {
@@ -169,6 +179,15 @@ const EOD = () => {
   // Execute batch job with actual logic
   const runJob = async (jobId: number) => {
     try {
+      // Before EOD Step 1 (Account Balance Update), block only if there are unverified transactions
+      if (jobId === 1) {
+        const verification = await getEODVerificationStatus();
+        if (!verification.canProceedWithEOD) {
+          setVerificationBlockDialog({ open: true, data: verification });
+          return;
+        }
+      }
+
       // Special handling for Batch Job 8 (Financial Reports Generation)
       if (jobId === 8) {
         await handleBatchJob8();
@@ -567,6 +586,54 @@ const EOD = () => {
           </Grid>
         </CardContent>
       </Card>
+
+      {/* Blocking dialog when EOD Step 1 is attempted with unverified transactions */}
+      <Dialog
+        open={verificationBlockDialog.open}
+        onClose={() => setVerificationBlockDialog({ open: false, data: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: 'error.main' }}>
+          Cannot Start EOD - Unverified Transactions
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" paragraph>
+            EOD is blocked because there are unverified transactions. Please verify all transactions before running EOD.
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+            <Typography component="li" variant="body2" paragraph>
+              <strong>Transactions: {verificationBlockDialog.data?.unverifiedTransactions ?? 0}</strong> unverified (must be verified)
+            </Typography>
+            <Typography component="li" variant="body2" paragraph color="text.secondary">
+              Interest Capitalizations: {verificationBlockDialog.data?.unverifiedInterestCapitalizations ?? 0} (informational only — does not block EOD)
+            </Typography>
+            <Typography component="li" variant="body2" paragraph>
+              Customer Accounts: {verificationBlockDialog.data?.unverifiedCustomerAccounts ?? 0} pending approval
+            </Typography>
+            <Typography component="li" variant="body2" paragraph>
+              Office Accounts: {verificationBlockDialog.data?.unverifiedOfficeAccounts ?? 0} pending approval
+            </Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            Verify all pending transactions, then try running EOD again.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setVerificationBlockDialog({ open: false, data: null })}>
+            Close
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setVerificationBlockDialog({ open: false, data: null });
+              navigate('/transactions');
+            }}
+          >
+            View Pending Items
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

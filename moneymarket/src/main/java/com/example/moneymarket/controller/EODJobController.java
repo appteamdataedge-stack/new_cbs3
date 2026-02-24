@@ -1,6 +1,7 @@
 package com.example.moneymarket.controller;
 
 import com.example.moneymarket.service.EODJobManagementService;
+import com.example.moneymarket.service.EODVerificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ import java.util.List;
 public class EODJobController {
 
     private final EODJobManagementService eodJobManagementService;
+    private final EODVerificationService eodVerificationService;
 
     /**
      * Execute a specific EOD job
@@ -91,6 +93,24 @@ public class EODJobController {
         } catch (Exception e) {
             log.error("Error checking if job {} can be executed: {}", jobNumber, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(false);
+        }
+    }
+
+    /**
+     * Get pre-EOD verification status. Call before starting EOD Step 1.
+     * If any unverified items exist, EOD should be blocked.
+     *
+     * @return Counts of unverified transactions, accounts, interest capitalizations and whether EOD can proceed
+     */
+    @GetMapping("/verification-status")
+    public ResponseEntity<EODVerificationService.VerificationStatusDTO> getVerificationStatus() {
+        log.info("Received request to get EOD verification status");
+        try {
+            EODVerificationService.VerificationStatusDTO status = eodVerificationService.getVerificationStatus();
+            return ResponseEntity.ok(status);
+        } catch (Exception e) {
+            log.error("Error retrieving verification status: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 

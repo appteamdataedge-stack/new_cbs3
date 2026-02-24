@@ -1,6 +1,7 @@
 com\example\moneymarket\service\SubProductGLReconciliationService$AccountBalanceSummary$AccountBalanceSummaryBuilder.class
 com\example\moneymarket\dto\SubProductResponseDTO$SubProductResponseDTOBuilder.class
 com\example\moneymarket\service\SubProductGLReconciliationService$AccountBalanceInfo$AccountBalanceInfoBuilder.class
+com\example\moneymarket\service\EODVerificationService.class
 com\example\moneymarket\repository\OFAcctMasterRepository.class
 com\example\moneymarket\dto\GLSetupResponseDTO$GLSetupResponseDTOBuilder.class
 com\example\moneymarket\entity\RevalTran$RevalTranBuilder.class
@@ -291,6 +292,7 @@ com\example\moneymarket\entity\FxRateMaster$FxRateMasterBuilder.class
 com\example\moneymarket\exception\SystemDateNotConfiguredException.class
 com\example\moneymarket\repository\GLMovementAccrualRepository.class
 com\example\moneymarket\service\SettlementAlertService.class
+com\example\moneymarket\service\EODVerificationService$VerificationStatusDTO.class
 com\example\moneymarket\entity\ValueDateInttAccr$AccrualStatus.class
 com\example\moneymarket\dto\GLSetupResponseDTO.class
 com\example\moneymarket\controller\BODController.class
