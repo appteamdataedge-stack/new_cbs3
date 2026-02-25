@@ -229,25 +229,44 @@ public class TransactionService {
             throw new ResourceNotFoundException("Transaction", "ID", tranId);
         }
 
-        // Validate again before posting
-        BigDecimal totalDebit = transactions.stream()
-                .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
-                .map(TranTable::getLcyAmt)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalCredit = transactions.stream()
-                .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
-                .map(TranTable::getLcyAmt)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        if (totalDebit.compareTo(totalCredit) != 0) {
-            throw new BusinessException("Cannot post unbalanced transaction");
+        // Validate again before posting.
+        // Settlement transactions (accountNo=null rows present) use different WAE per leg so
+        // LCY totals intentionally differ. Validate FCY balance of the main legs only.
+        boolean hasSettlementRows = transactions.stream().anyMatch(t -> t.getAccountNo() == null);
+        if (hasSettlementRows) {
+            List<TranTable> mainLegs = transactions.stream()
+                    .filter(t -> t.getAccountNo() != null)
+                    .collect(Collectors.toList());
+            BigDecimal totalDebitFcy = mainLegs.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+                    .map(TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalCreditFcy = mainLegs.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                    .map(TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (totalDebitFcy.compareTo(totalCreditFcy) != 0) {
+                throw new BusinessException("Cannot post unbalanced transaction");
+            }
+        } else {
+            BigDecimal totalDebit = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+                    .map(TranTable::getLcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalCredit = transactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                    .map(TranTable::getLcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (totalDebit.compareTo(totalCredit) != 0) {
+                throw new BusinessException("Cannot post unbalanced transaction");
+            }
         }
 
         // Validate all transactions again before posting using new business rules
         for (TranTable transaction : transactions) {
-            // Skip balance validation for GL-only lines (FX Gain/Loss, Position GL)
-            if (glSetupRepository.findById(transaction.getAccountNo()).isPresent()) {
+            // Skip validation for GL-only lines: settlement rows (accountNo=null) and GL setup rows
+            if (transaction.getAccountNo() == null
+                    || glSetupRepository.findById(transaction.getAccountNo()).isPresent()) {
                 log.debug("Skipping account validation for GL-only line: {}", transaction.getAccountNo());
                 continue;
             }
@@ -306,17 +325,26 @@ public class TransactionService {
             transaction.setTranStatus(TranStatus.Posted);
 
             String glNum;
-            Optional<GLSetup> glOpt = glSetupRepository.findById(transaction.getAccountNo());
-            if (glOpt.isPresent()) {
-                // GL-only line (e.g. FX Gain 140203002, FX Loss 240203002, Position 920101001)
-                glNum = transaction.getAccountNo();
+            boolean isGlOnlyRow;
+            if (transaction.getAccountNo() == null) {
+                // Settlement row: accountNo is null, glNum is already stamped on the entity
+                glNum = transaction.getGlNum();
+                isGlOnlyRow = true;
             } else {
-                glNum = unifiedAccountService.getGlNum(transaction.getAccountNo());
+                Optional<GLSetup> glOpt = glSetupRepository.findById(transaction.getAccountNo());
+                if (glOpt.isPresent()) {
+                    // GL-only line (e.g. Position GL 920101001 used as accountNo)
+                    glNum = transaction.getAccountNo();
+                    isGlOnlyRow = true;
+                } else {
+                    glNum = unifiedAccountService.getGlNum(transaction.getAccountNo());
+                    isGlOnlyRow = false;
+                }
             }
             GLSetup glSetup = glSetupRepository.findById(glNum)
                     .orElseThrow(() -> new ResourceNotFoundException("GL", "GL Number", glNum));
 
-            if (!glOpt.isPresent()) {
+            if (!isGlOnlyRow) {
                 // Customer/Office account: update account balance and GL
                 BigDecimal accountBalanceAmount;
                 if ("BDT".equals(transaction.getTranCcy())) {
@@ -400,9 +428,10 @@ public class TransactionService {
         // First, post the main transaction using normal logic
         TransactionResponseDTO response = postCurrentTransaction(tranId, transactions);
 
-        // Calculate and post interest adjustments for each line (skip GL-only lines)
+        // Calculate and post interest adjustments for each line (skip GL-only and settlement rows)
         for (TranTable transaction : transactions) {
-            if (glSetupRepository.findById(transaction.getAccountNo()).isPresent()) {
+            if (transaction.getAccountNo() == null
+                    || glSetupRepository.findById(transaction.getAccountNo()).isPresent()) {
                 continue;
             }
             LocalDate valueDate = transaction.getValueDate();

@@ -23,12 +23,18 @@ import java.util.Optional;
 public interface GLBalanceRepository extends JpaRepository<GLBalance, Long> {
 
     /**
-     * Find GL balance by GL number with pessimistic write lock
-     * Note: This will return the most recent record if multiple exist for the same GL
+     * Find the most recent GL balance row for a GL number with pessimistic write lock.
+     * Spring Data derived 'findFirst' generates LIMIT 1 automatically; @Lock adds FOR UPDATE.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT gb FROM GLBalance gb WHERE gb.glNum = ?1 ORDER BY gb.tranDate DESC")
-    Optional<GLBalance> findByGlNumWithLock(String glNum);
+    Optional<GLBalance> findFirstByGlNumOrderByTranDateDesc(String glNum);
+
+    /**
+     * Alias kept so existing callers of findByGlNumWithLock() continue to work.
+     */
+    default Optional<GLBalance> findByGlNumWithLock(String glNum) {
+        return findFirstByGlNumOrderByTranDateDesc(glNum);
+    }
 
     @Query(value = "SELECT * FROM gl_balance WHERE GL_Num = ?1 AND Tran_date = ?2 LIMIT 1",
            nativeQuery = true)
