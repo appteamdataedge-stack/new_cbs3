@@ -44,25 +44,47 @@ const TransactionForm = () => {
   const [rateTypes, setRateTypes] = useState<Map<number, string>>(new Map()); // Store rate type per line (Mid/Buying/Selling)
   const [exchangeRates, setExchangeRates] = useState<Map<number, { midRate: number; buyingRate: number; sellingRate: number }>>(new Map()); // Store all rates per line
 
-  // Fetch customer accounts for dropdown
+  // Timeout so a hanging API never blocks the page forever
+  const QUERY_TIMEOUT_MS = 15_000;
+
+  // Fetch customer accounts for dropdown (only on mount; no WAE/balance call here)
   const { data: customerAccountsData, isLoading: isLoadingCustomerAccounts } = useQuery({
-    queryKey: ['customer-accounts', { page: 0, size: 100 }], // Get all customer accounts for dropdown
-    queryFn: () => getAllCustomerAccounts(0, 100),
+    queryKey: ['customer-accounts', { page: 0, size: 100 }],
+    queryFn: async () => {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Customer accounts request timed out')), QUERY_TIMEOUT_MS)
+      );
+      return Promise.race([getAllCustomerAccounts(0, 100), timeout]);
+    },
+    retry: 1,
   });
 
   // Fetch office accounts for dropdown
   const { data: officeAccountsData, isLoading: isLoadingOfficeAccounts } = useQuery({
-    queryKey: ['office-accounts', { page: 0, size: 100 }], // Get all office accounts for dropdown
-    queryFn: () => getAllOfficeAccounts(0, 100),
+    queryKey: ['office-accounts', { page: 0, size: 100 }],
+    queryFn: async () => {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Office accounts request timed out')), QUERY_TIMEOUT_MS)
+      );
+      return Promise.race([getAllOfficeAccounts(0, 100), timeout]);
+    },
+    retry: 1,
   });
 
-  // Fetch system date for default value
+  // Fetch system date for default value (does not block form render)
   const { data: systemDate, isLoading: isLoadingSystemDate } = useQuery({
     queryKey: ['system-date'],
     queryFn: async () => {
-      const response = await getTransactionSystemDate();
-      return response.systemDate;
-    }
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('System date request timed out')), QUERY_TIMEOUT_MS)
+      );
+      const response = await Promise.race([
+        getTransactionSystemDate().then(r => r.systemDate),
+        timeout,
+      ]);
+      return response;
+    },
+    retry: 1,
   });
 
   // Combine customer and office accounts into a unified list
@@ -130,12 +152,11 @@ const TransactionForm = () => {
     // Use watchedLines which updates on every field change
     const linesToCalculate = watchedLines || [];
     
-    // Check if all accounts are USD
-    const allAccountsUSD = linesToCalculate.length > 0 && linesToCalculate.every((line: any) => {
-      const balance = accountBalances.get(`${linesToCalculate.indexOf(line)}`);
-      return balance?.accountCcy === 'USD';
-    });
-    
+    // All legs in same FCY (e.g. both USD): validate FCY balance only; LCY may differ → settlement gain/loss
+    const allSameFcy = linesToCalculate.length > 0
+      && linesToCalculate.every((l: any) => (l.tranCcy || '') !== 'BDT' && (l.tranCcy || '').length > 0)
+      && new Set(linesToCalculate.map((l: any) => (l.tranCcy || '').trim())).size === 1;
+
     linesToCalculate.forEach((line: any) => {
       // LCY amounts (always calculated for balance checking)
       const lcyAmount = parseFloat(String(line?.lcyAmt || 0));
@@ -160,32 +181,21 @@ const TransactionForm = () => {
     debitTotalFcy = Math.round(debitTotalFcy * 100) / 100;
     creditTotalFcy = Math.round(creditTotalFcy * 100) / 100;
 
-    // Balance check: LCY for normal; for settlement (2 USD lines) FCY match is enough
+    // Balance check: when all legs same FCY (e.g. USD), use FCY balance only; else LCY
     const balanced = Math.abs(debitTotalLcy - creditTotalLcy) < 0.01;
     const fcyBalanced = Math.abs(debitTotalFcy - creditTotalFcy) < 0.01;
-    const isSettlement = linesToCalculate.length === 2 && allAccountsUSD && fcyBalanced;
+    const isBalancedResult = allSameFcy ? fcyBalanced : balanced;
+    const isSettlement = allSameFcy && fcyBalanced;
 
-    // Determine display currency
-    const currency = allAccountsUSD ? 'USD' : 'BDT';
-
-    // Log for debugging
-    console.log('Totals calculated:', { 
-      debitTotalLcy, 
-      creditTotalLcy, 
-      debitTotalFcy, 
-      creditTotalFcy, 
-      balanced,
-      currency,
-      allAccountsUSD,
-      isSettlement
-    });
+    // Display currency: same-FCY use that currency (e.g. USD), else BDT
+    const currency = allSameFcy ? (linesToCalculate[0]?.tranCcy || 'USD') : 'BDT';
 
     return {
       totalDebit: debitTotalLcy,
       totalCredit: creditTotalLcy,
       totalDebitFcy: debitTotalFcy,
       totalCreditFcy: creditTotalFcy,
-      isBalanced: balanced,
+      isBalanced: isBalancedResult,
       isSettlement,
       displayCurrency: currency
     };
@@ -241,7 +251,7 @@ const TransactionForm = () => {
       setAccountOverdraftStatus(prev => new Map(prev).set(`${index}`, overdraftData.isOverdraftAccount));
       setAssetAccounts(prev => new Map(prev).set(`${index}`, isAssetAccount || false));
       
-      // ✅ FIX ISSUE 3: Auto-set currency for USD accounts; auto-select WAE vs Mid by settlement
+      // Auto-set currency for USD accounts; WAE is always from balance (account-only), never from DR/CR
       const accountCurrency = balanceData.accountCcy || 'BDT';
       if (accountCurrency === 'USD') {
         setValue(`lines.${index}.tranCcy`, 'USD');
@@ -252,7 +262,7 @@ const TransactionForm = () => {
             buyingRate: exchangeRateData.buyingRate,
             sellingRate: exchangeRateData.sellingRate
           }));
-          // Settlement = Liability Debit or Asset Credit → WAE; else Mid (use just-fetched data)
+          // Use balanceData (just fetched by account only) so WAE is correct regardless of DR/CR
           applySettlementExchangeRate(index, balanceData, exchangeRateData.midRate);
           const isAsset = selectedAccount?.glNum?.startsWith('2');
           const drCr = watch(`lines.${index}.drCrFlag`);
@@ -308,7 +318,9 @@ const TransactionForm = () => {
     }
   });
 
-  const isLoading = createTransactionMutation.isPending || isLoadingAccounts || isLoadingSystemDate;
+  // Form-level loading: only block submit and account dropdown while accounts load; other fields stay usable so page never feels "stuck".
+  const isLoading = createTransactionMutation.isPending || isLoadingAccounts;
+  const isSubmitting = createTransactionMutation.isPending;
 
   // Add a new transaction line
   const addLine = () => {
@@ -446,11 +458,11 @@ const TransactionForm = () => {
   };
 
   /**
-   * Settlement (WAE) vs Non-Settlement (Mid) rate selection:
-   * - Settlement: Liability DEBIT or Asset CREDIT → use WAE
+   * Settlement (WAE) vs Non-Settlement (Mid) rate selection.
+   * WAE is always taken from balance (fetched by account only) — never from DR/CR.
+   * - Settlement: Liability DEBIT or Asset CREDIT → use WAE for exchange rate field
    * - Non-Settlement: Liability CREDIT or Asset DEBIT → use Mid
-   * GL 1xxx = Liability, GL 2xxx = Asset
-   * @param balanceOverride When called right after fetch, pass the new balance so we don't rely on stale state
+   * @param balanceOverride When called right after fetch, pass the new balance so WAE is correct immediately
    * @param midRateOverride When called right after fetch, pass the fetched mid rate
    */
   const applySettlementExchangeRate = (
@@ -461,8 +473,9 @@ const TransactionForm = () => {
     const balance = balanceOverride ?? accountBalances.get(`${index}`);
     const accountCcy = balance?.accountCcy || 'BDT';
     if (accountCcy !== 'USD') return;
+    // WAE must always come from balance (account-specific); do not use exchange rate field as source
     const waeRate = balance?.wae;
-    const midRate = midRateOverride ?? exchangeRates.get(index)?.midRate ?? waeRate ?? 1;
+    const midRate = midRateOverride ?? exchangeRates.get(index)?.midRate ?? (typeof waeRate === 'number' ? waeRate : 1);
 
     const drCrFlag = watch(`lines.${index}.drCrFlag`);
     const isAsset = assetAccounts.get(`${index}`) ?? false;
@@ -812,14 +825,16 @@ const TransactionForm = () => {
                         type="text"
                         fullWidth
                         value={(() => {
-                          const wae = accountBalances.get(`${index}`)?.wae;
-                          return wae !== undefined && wae !== null ? wae.toFixed(4) : 'N/A';
+                          // Always from balance (account-only fetch); never from DR/CR or exchange rate field
+                          const bal = accountBalances.get(`${index}`);
+                          const wae = bal?.wae;
+                          return wae !== undefined && wae !== null ? Number(wae).toFixed(4) : 'N/A';
                         })()}
                         InputProps={{
                           readOnly: true,
                         }}
                         disabled={true}
-                        helperText="Weighted Average Exchange Rate"
+                        helperText="Weighted Average Exchange Rate (account-specific, from balance)"
                       />
                     </Grid>
                   </>
