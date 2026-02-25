@@ -172,37 +172,26 @@ public class TransactionService {
             transactions.add(transaction);
         }
         
-        // Save all transaction lines
-        tranTableRepository.saveAll(transactions);
-        
-        // Settlement: compute gain/loss from actual LCY totals (each line used its own WAE)
+        // FCY settlement: add settlement rows only when WAE != Mid and trigger rules apply (Liability Dr / Asset Cr)
         BigDecimal settlementGainLoss = BigDecimal.ZERO;
         if (isSettlement && transactions.size() == 2) {
-            BigDecimal totalDrLcy = transactions.stream()
-                    .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+            List<TranTable> settlementRows = buildFcySettlementRows(tranId, transactions, tranDate, valueDate);
+            transactions.addAll(settlementRows);
+            settlementGainLoss = settlementRows.stream()
+                    .filter(t -> FX_GAIN_GL.equals(t.getGlNum()))
                     .map(TranTable::getLcyAmt)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal totalCrLcy = transactions.stream()
-                    .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
-                    .map(TranTable::getLcyAmt)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal netLcy = totalDrLcy.subtract(totalCrLcy).setScale(2, RoundingMode.HALF_UP);
-            if (netLcy.compareTo(BigDecimal.ZERO) != 0) {
-                BigDecimal absAmount = netLcy.abs();
-                boolean isGain = netLcy.compareTo(BigDecimal.ZERO) < 0; // net credit = gain
-                settlementGainLoss = isGain ? absAmount : absAmount.negate();
-                String baseId = tranId;
-                if (isGain) {
-                    transactions.add(TranTable.builder().tranId(baseId + "-3").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.D).tranStatus(TranStatus.Entry).accountNo(POSITION_GL_USD).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(absAmount).creditAmount(BigDecimal.ZERO).narration("FX Gain").udf1(null).glNum(POSITION_GL_USD).build());
-                    transactions.add(TranTable.builder().tranId(baseId + "-4").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.C).tranStatus(TranStatus.Entry).accountNo(FX_GAIN_GL).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(BigDecimal.ZERO).creditAmount(absAmount).narration("FX Gain").udf1(null).glNum(FX_GAIN_GL).build());
-                } else {
-                    transactions.add(TranTable.builder().tranId(baseId + "-3").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.D).tranStatus(TranStatus.Entry).accountNo(FX_LOSS_GL).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(absAmount).creditAmount(BigDecimal.ZERO).narration("FX Loss").udf1(null).glNum(FX_LOSS_GL).build());
-                    transactions.add(TranTable.builder().tranId(baseId + "-4").tranDate(tranDate).valueDate(valueDate).drCrFlag(DrCrFlag.C).tranStatus(TranStatus.Entry).accountNo(POSITION_GL_USD).tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE).lcyAmt(absAmount).debitAmount(BigDecimal.ZERO).creditAmount(absAmount).narration("FX Loss").udf1(null).glNum(POSITION_GL_USD).build());
-                }
-                tranTableRepository.saveAll(transactions.subList(2, transactions.size()));
-            }
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .subtract(
+                            settlementRows.stream()
+                                    .filter(t -> FX_LOSS_GL.equals(t.getGlNum()))
+                                    .map(TranTable::getLcyAmt)
+                                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    );
         }
-        
+
+        // Save all transaction lines (legs + any settlement rows) in one transaction
+        tranTableRepository.saveAll(transactions);
+
         // Create response
         String responseNarration = (transactionNarration != null && !transactionNarration.isBlank())
                 ? transactionNarration
@@ -692,19 +681,25 @@ public class TransactionService {
     }
 
     /**
-     * Validate that the transaction is balanced (debit equals credit in LCY, or FCY for settlement).
-     * Settlement (FCY-FCY): Liability Dr + Asset Cr — allow when FCY amounts match; LCY difference = gain/loss.
+     * Validate that the transaction is balanced.
+     * - If all legs are in the same FCY (e.g. both USD): compare FCY totals only. If FCY debit == FCY credit, allow (LCY may differ due to WAE → settlement gain/loss).
+     * - If BDT or mixed currencies: compare LCY totals (debit must equal credit in LCY).
      */
     private void validateTransactionBalance(TransactionRequestDTO transactionRequestDTO) {
         List<TransactionLineDTO> lines = transactionRequestDTO.getLines();
-        if (lines.size() == 2 && isSettlementTransaction(lines)) {
-            BigDecimal fcyDr = lines.stream().filter(l -> l.getDrCrFlag() == DrCrFlag.D).map(TransactionLineDTO::getFcyAmt).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fcyCr = lines.stream().filter(l -> l.getDrCrFlag() == DrCrFlag.C).map(TransactionLineDTO::getFcyAmt).reduce(BigDecimal.ZERO, BigDecimal::add);
-            if (fcyDr.compareTo(fcyCr) != 0) {
-                throw new BusinessException("Settlement transaction: FCY debit must equal FCY credit. Please correct the entries.");
+        if (lines.isEmpty()) return;
+
+        boolean allSameFcy = lines.stream().allMatch(l -> l.getTranCcy() != null && !"BDT".equals(l.getTranCcy()))
+                && lines.stream().map(TransactionLineDTO::getTranCcy).distinct().count() == 1;
+        if (allSameFcy) {
+            BigDecimal totalFcyDr = lines.stream().filter(l -> l.getDrCrFlag() == DrCrFlag.D).map(TransactionLineDTO::getFcyAmt).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalFcyCr = lines.stream().filter(l -> l.getDrCrFlag() == DrCrFlag.C).map(TransactionLineDTO::getFcyAmt).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (totalFcyDr.compareTo(totalFcyCr) != 0) {
+                throw new BusinessException("FCY debit total must equal FCY credit total. Please correct the entries.");
             }
             return;
         }
+
         BigDecimal totalDebits = lines.stream()
                 .filter(line -> line.getDrCrFlag() == DrCrFlag.D)
                 .map(TransactionLineDTO::getLcyAmt)
@@ -719,7 +714,10 @@ public class TransactionService {
     }
 
     /**
-     * Settlement = 2 lines, same FCY (e.g. USD), one Liability Debit + one Asset Credit. GL 1xxx = Liability, 2xxx = Asset.
+     * Settlement = 2 lines, same FCY (e.g. USD).
+     * Triggers:
+     *   - Asset CR + Liability DR (any order)
+     *   - Liability DR + Liability CR (Liability-to-Liability; only the DR leg triggers)
      */
     private boolean isSettlementTransaction(List<TransactionLineDTO> lines) {
         if (lines == null || lines.size() != 2) return false;
@@ -729,14 +727,144 @@ public class TransactionService {
         try {
             UnifiedAccountService.AccountInfo info0 = unifiedAccountService.getAccountInfo(lines.get(0).getAccountNo());
             UnifiedAccountService.AccountInfo info1 = unifiedAccountService.getAccountInfo(lines.get(1).getAccountNo());
-            boolean liabilityDr = info0.isLiabilityAccount() && lines.get(0).getDrCrFlag() == DrCrFlag.D;
-            boolean assetCr = info1.isAssetAccount() && lines.get(1).getDrCrFlag() == DrCrFlag.C;
-            if (liabilityDr && assetCr) return true;
-            liabilityDr = info1.isLiabilityAccount() && lines.get(1).getDrCrFlag() == DrCrFlag.D;
-            assetCr = info0.isAssetAccount() && lines.get(0).getDrCrFlag() == DrCrFlag.C;
-            return liabilityDr && assetCr;
+            boolean liabilityDr0 = info0.isLiabilityAccount() && lines.get(0).getDrCrFlag() == DrCrFlag.D;
+            boolean liabilityDr1 = info1.isLiabilityAccount() && lines.get(1).getDrCrFlag() == DrCrFlag.D;
+            boolean assetCr0 = info0.isAssetAccount() && lines.get(0).getDrCrFlag() == DrCrFlag.C;
+            boolean assetCr1 = info1.isAssetAccount() && lines.get(1).getDrCrFlag() == DrCrFlag.C;
+            // Asset CR + Liability DR (either order)
+            if ((liabilityDr0 && assetCr1) || (liabilityDr1 && assetCr0)) return true;
+            // Liability to Liability — the DEBIT leg always triggers settlement
+            if (info0.isLiabilityAccount() && info1.isLiabilityAccount()
+                    && (liabilityDr0 || liabilityDr1)) return true;
+            return false;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * Build FCY settlement rows when WAE != Mid.
+     * Settlement triggers: Liability FCY → DEBIT only; Asset FCY → CREDIT only.
+     * Each trigger produces ONE row. IDs assigned consecutively starting at -3.
+     */
+    private List<TranTable> buildFcySettlementRows(String baseTranId, List<TranTable> legs, LocalDate tranDate, LocalDate valueDate) {
+        List<TranTable> out = new ArrayList<>();
+        if (legs.size() != 2) return out;
+        TranTable leg0 = legs.get(0);
+        TranTable leg1 = legs.get(1);
+        String ccy = leg0.getTranCcy();
+        if (ccy == null || "BDT".equals(ccy)) return out;
+
+        UnifiedAccountService.AccountInfo info0 = unifiedAccountService.getAccountInfo(leg0.getAccountNo());
+        UnifiedAccountService.AccountInfo info1 = unifiedAccountService.getAccountInfo(leg1.getAccountNo());
+        BigDecimal wae0 = balanceService.getComputedAccountBalance(leg0.getAccountNo(), tranDate).getWae();
+        BigDecimal wae1 = balanceService.getComputedAccountBalance(leg1.getAccountNo(), tranDate).getWae();
+        if (wae0 == null) wae0 = exchangeRateService.getExchangeRate(ccy, tranDate);
+        if (wae1 == null) wae1 = exchangeRateService.getExchangeRate(ccy, tranDate);
+        BigDecimal mid = exchangeRateService.getExchangeRate(ccy, tranDate);
+
+        if (wae0 != null && wae1 != null && mid != null
+                && wae0.compareTo(mid) == 0 && wae1.compareTo(mid) == 0) {
+            return out;
+        }
+
+        boolean liability0 = info0.isLiabilityAccount();
+        boolean asset0 = info0.isAssetAccount();
+        boolean liability1 = info1.isLiabilityAccount();
+        boolean asset1 = info1.isAssetAccount();
+        boolean dr0 = leg0.getDrCrFlag() == DrCrFlag.D;
+        boolean cr0 = leg0.getDrCrFlag() == DrCrFlag.C;
+        boolean dr1 = leg1.getDrCrFlag() == DrCrFlag.D;
+        boolean cr1 = leg1.getDrCrFlag() == DrCrFlag.C;
+
+        // Trigger: Liability Dr or Asset Cr
+        boolean trigger0 = (liability0 && dr0) || (asset0 && cr0);
+        boolean trigger1 = (liability1 && dr1) || (asset1 && cr1);
+        // Asset Dr + Liability Cr → no settlement
+        if (!trigger0 && !trigger1) return out;
+
+        int nextSuffix = 3;
+        if (trigger0 && leg0.getFcyAmt() != null && leg0.getFcyAmt().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal wae = wae0;
+            BigDecimal fcy = leg0.getFcyAmt();
+            BigDecimal amount;
+            boolean isGain;
+            if (liability0 && dr0) {
+                if (mid.compareTo(wae) > 0) {
+                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = false;
+                } else {
+                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = true;
+                }
+            } else {
+                if (mid.compareTo(wae) < 0) {
+                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = false;
+                } else {
+                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = true;
+                }
+            }
+            if (amount.compareTo(BigDecimal.ZERO) > 0) {
+                addSettlementRow(baseTranId, tranDate, valueDate, amount, isGain, nextSuffix, out);
+                nextSuffix += 1;
+            }
+        }
+        if (trigger1 && leg1.getFcyAmt() != null && leg1.getFcyAmt().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal wae = wae1;
+            BigDecimal fcy = leg1.getFcyAmt();
+            BigDecimal amount;
+            boolean isGain;
+            if (liability1 && dr1) {
+                if (mid.compareTo(wae) > 0) {
+                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = false;
+                } else {
+                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = true;
+                }
+            } else {
+                if (mid.compareTo(wae) < 0) {
+                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = false;
+                } else {
+                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    isGain = true;
+                }
+            }
+            if (amount.compareTo(BigDecimal.ZERO) > 0) {
+                addSettlementRow(baseTranId, tranDate, valueDate, amount, isGain, nextSuffix, out);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Add a single settlement row for one trigger leg.
+     * account_no is always null for settlement rows; only gl_num is populated.
+     * GAIN → CR to FX_GAIN_GL (140203002)
+     * LOSS → DR to FX_LOSS_GL (240203002)
+     */
+    private void addSettlementRow(String baseTranId, LocalDate tranDate, LocalDate valueDate,
+                                  BigDecimal amount, boolean isGain, int suffix, List<TranTable> out) {
+        String id = baseTranId + "-" + suffix;
+        if (isGain) {
+            out.add(TranTable.builder()
+                    .tranId(id).tranDate(tranDate).valueDate(valueDate)
+                    .drCrFlag(DrCrFlag.C).tranStatus(TranStatus.Entry)
+                    .accountNo(null)
+                    .tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE)
+                    .lcyAmt(amount).debitAmount(BigDecimal.ZERO).creditAmount(amount)
+                    .narration("FX Gain").udf1(null).glNum(FX_GAIN_GL).build());
+        } else {
+            out.add(TranTable.builder()
+                    .tranId(id).tranDate(tranDate).valueDate(valueDate)
+                    .drCrFlag(DrCrFlag.D).tranStatus(TranStatus.Entry)
+                    .accountNo(null)
+                    .tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE)
+                    .lcyAmt(amount).debitAmount(amount).creditAmount(BigDecimal.ZERO)
+                    .narration("FX Loss").udf1(null).glNum(FX_LOSS_GL).build());
         }
     }
 
