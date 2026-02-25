@@ -759,9 +759,22 @@ public class TransactionService {
         UnifiedAccountService.AccountInfo info1 = unifiedAccountService.getAccountInfo(leg1.getAccountNo());
         BigDecimal wae0 = balanceService.getComputedAccountBalance(leg0.getAccountNo(), tranDate).getWae();
         BigDecimal wae1 = balanceService.getComputedAccountBalance(leg1.getAccountNo(), tranDate).getWae();
-        if (wae0 == null) wae0 = exchangeRateService.getExchangeRate(ccy, tranDate);
-        if (wae1 == null) wae1 = exchangeRateService.getExchangeRate(ccy, tranDate);
-        BigDecimal mid = exchangeRateService.getExchangeRate(ccy, tranDate);
+        // Fetch mid rate for the transaction date; fall back to the latest available rate
+        // if no rate exists on or before that date (e.g. test environments with date mismatch).
+        BigDecimal mid;
+        try {
+            mid = exchangeRateService.getExchangeRate(ccy, tranDate);
+        } catch (BusinessException e) {
+            mid = exchangeRateService.getLatestMidRate(ccy);
+            if (mid == null) {
+                log.warn("No mid rate available for {} at all – skipping settlement rows", ccy);
+                return out;
+            }
+            log.warn("No mid rate found for {} on {} – using latest available rate {} for settlement calculation",
+                    ccy, tranDate, mid);
+        }
+        if (wae0 == null) wae0 = mid;
+        if (wae1 == null) wae1 = mid;
 
         if (wae0 != null && wae1 != null && mid != null
                 && wae0.compareTo(mid) == 0 && wae1.compareTo(mid) == 0) {
@@ -969,9 +982,10 @@ public class TransactionService {
         List<TransactionLineResponseDTO> lines = transactions.stream()
                 .map(tran -> {
                     String accountNo = tran.getAccountNo();
-                    String accountName = custAcctMasterRepository.findById(accountNo)
-                            .map(CustAcctMaster::getAcctName)
-                            .orElse("");
+                    String accountName = (accountNo == null) ? "" :
+                            custAcctMasterRepository.findById(accountNo)
+                                    .map(CustAcctMaster::getAcctName)
+                                    .orElse("");
                             
                     return TransactionLineResponseDTO.builder()
                             .tranId(tran.getTranId())

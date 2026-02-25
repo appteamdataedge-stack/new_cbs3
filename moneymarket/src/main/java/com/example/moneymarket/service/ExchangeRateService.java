@@ -61,6 +61,24 @@ public class ExchangeRateService {
     }
 
     /**
+     * Get the absolute latest mid exchange rate for a currency, regardless of date.
+     * Used as a fallback when no rate exists on or before the transaction date.
+     *
+     * @param currency The currency code (USD, EUR, GBP, etc.)
+     * @return The most recent mid rate, or null if none exists at all
+     */
+    @Transactional(readOnly = true, propagation = org.springframework.transaction.annotation.Propagation.SUPPORTS)
+    public BigDecimal getLatestMidRate(String currency) {
+        if ("BDT".equals(currency)) {
+            return BigDecimal.ONE;
+        }
+        String ccyPair = currency + "/BDT";
+        return fxRateMasterRepository.findFirstByCcyPairOrderByRateDateDesc(ccyPair)
+                .map(FxRateMaster::getMidRate)
+                .orElse(null);
+    }
+
+    /**
      * Convert foreign currency amount to local currency (BDT)
      * Formula: LCY_Amt = FCY_Amt * Exchange_Rate
      * 

@@ -120,67 +120,24 @@ public class MultiCurrencyTransactionService {
 
     /**
      * Process BUY transaction (Pattern 1: Customer deposits FCY)
-     * - Post 4 Position GL entries at DEAL rate
-     * - NO settlement gain/loss
-     * - UPDATE WAE Master
+     * - Only UPDATE WAE Master (Position GL and settlement rows are created in TransactionService at create time)
      */
     private void processBuyTransaction(TranTable transaction) {
         log.info("Processing BUY transaction (Pattern 1): {}", transaction.getTranId());
-
-        // Step 1: Post Position GL entries at DEAL rate
-        postPositionGLEntriesForBuy(transaction);
-
-        // Step 2: Update WAE Master (only for BUY)
         updateWAEMasterForBuy(transaction);
-
         log.info("BUY transaction processing completed");
     }
 
     /**
      * Process SELL transaction (Pattern 2, 3, 4: Customer withdraws FCY)
-     * - Post 4 Position GL entries at WAE rate (transaction rate = WAE for settlement)
-     * - Settlement gain/loss = (WAE - Mid) × FCY (positive = gain, negative = loss)
-     * - If gain/loss exists, post 2 additional entries
+     * - Settlement rows are already created in TransactionService at create time (tranId-3, -4, etc.)
+     * - No Position GL or settlement entries posted here to avoid duplicates
      *
-     * @return Settlement gain/loss in LCY (positive = gain, negative = loss, zero = none)
+     * @return Settlement gain/loss in LCY (zero here; already reflected in created rows)
      */
     private BigDecimal processSellTransaction(TranTable transaction) {
-        log.info("Processing SELL transaction (Pattern 2/3/4): {}", transaction.getTranId());
-
-        String ccyPair = transaction.getTranCcy() + "/BDT";
-        Optional<WaeMaster> waeMasterOpt = waeMasterRepository.findByCcyPair(ccyPair);
-
-        if (waeMasterOpt.isEmpty()) {
-            log.warn("WAE Master not found for {}, cannot process SELL transaction", ccyPair);
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal waeRate = transaction.getExchangeRate(); // Deal rate used = WAE for settlement
-        BigDecimal midRate = exchangeRateService.getExchangeRate(transaction.getTranCcy(), transaction.getTranDate());
-        BigDecimal fcyAmt = transaction.getFcyAmt();
-
-        // Settlement gain/loss: (WAE - Mid) × FCY → positive = gain, negative = loss
-        BigDecimal settlementGainLoss = waeRate.subtract(midRate).multiply(fcyAmt).setScale(2, RoundingMode.HALF_UP);
-
-        // Step 1: Post Position GL entries at WAE rate
-        postPositionGLEntriesForSell(transaction, waeRate);
-
-        // Step 2: If gain/loss exists, post additional entries
-        if (settlementGainLoss.compareTo(BigDecimal.ZERO) != 0) {
-            boolean isGain = settlementGainLoss.compareTo(BigDecimal.ZERO) > 0;
-            if (isGain) {
-                log.info("Pattern 3: SELL with GAIN of {}", settlementGainLoss);
-                postSettlementGain(transaction, settlementGainLoss);
-            } else {
-                log.info("Pattern 4: SELL with LOSS of {}", settlementGainLoss.abs());
-                postSettlementLoss(transaction, settlementGainLoss.abs());
-            }
-        } else {
-            log.info("Pattern 2: SELL at WAE, no gain/loss");
-        }
-
-        log.info("SELL transaction processing completed");
-        return settlementGainLoss;
+        log.info("Processing SELL transaction (settlement rows created at create time): {}", transaction.getTranId());
+        return BigDecimal.ZERO;
     }
 
     /**

@@ -44,29 +44,6 @@ public class TransactionValidator implements Validator {
                         .orElse(null));
     }
 
-    /**
-     * Settlement = 2 lines, same FCY (not BDT), one Liability Debit + one Asset Credit.
-     * GL 1xxx = Liability, 2xxx = Asset.
-     */
-    private boolean isSettlementTransaction(List<TransactionLineDTO> lines) {
-        if (lines == null || lines.size() != 2) return false;
-        String ccy = lines.get(0).getTranCcy();
-        if (ccy == null || "BDT".equals(ccy)) return false;
-        if (!ccy.equals(lines.get(1).getTranCcy())) return false;
-        String gl0 = getGLNumber(lines.get(0).getAccountNo());
-        String gl1 = getGLNumber(lines.get(1).getAccountNo());
-        if (gl0 == null || gl1 == null) return false;
-        boolean liability0 = gl0.startsWith("1");
-        boolean asset0 = gl0.startsWith("2");
-        boolean liability1 = gl1.startsWith("1");
-        boolean asset1 = gl1.startsWith("2");
-        boolean liabilityDr0 = liability0 && lines.get(0).getDrCrFlag() == DrCrFlag.D;
-        boolean assetCr0 = asset0 && lines.get(0).getDrCrFlag() == DrCrFlag.C;
-        boolean liabilityDr1 = liability1 && lines.get(1).getDrCrFlag() == DrCrFlag.D;
-        boolean assetCr1 = asset1 && lines.get(1).getDrCrFlag() == DrCrFlag.C;
-        return (liabilityDr0 && assetCr1) || (liabilityDr1 && assetCr0);
-    }
-
     @Override
     public void validate(Object target, Errors errors) {
         TransactionRequestDTO transaction = (TransactionRequestDTO) target;
@@ -88,11 +65,12 @@ public class TransactionValidator implements Validator {
             }
         }
 
-        // Detect settlement: Liability Dr + Asset Cr, same FCY (e.g. USD)
-        boolean isSettlement = isSettlementTransaction(lines);
+        // If all legs are in the same FCY (e.g. both USD): validate FCY totals only (LCY may differ → settlement gain/loss).
+        // If BDT or mixed: validate LCY totals.
+        boolean allSameFcy = lines.stream().allMatch(l -> l.getTranCcy() != null && !"BDT".equals(l.getTranCcy()))
+                && lines.stream().map(TransactionLineDTO::getTranCcy).distinct().count() == 1;
 
-        if (isSettlement) {
-            // For settlement: validate FCY amounts match (LCY may differ → gain/loss)
+        if (allSameFcy) {
             BigDecimal totalDebitFcy = lines.stream()
                     .filter(line -> line.getDrCrFlag() == DrCrFlag.D)
                     .map(TransactionLineDTO::getFcyAmt)
@@ -102,11 +80,9 @@ public class TransactionValidator implements Validator {
                     .map(TransactionLineDTO::getFcyAmt)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             if (totalDebitFcy.compareTo(totalCreditFcy) != 0) {
-                errors.reject("imbalance", "FCY amounts must match for settlement transactions.");
+                errors.reject("imbalance", "FCY debit total must equal FCY credit total. Please correct the entries.");
             }
-            // Skip LCY validation for settlement
         } else {
-            // Non-settlement: debit must equal credit in LCY
             BigDecimal totalDebits = lines.stream()
                     .filter(line -> line.getDrCrFlag() == DrCrFlag.D)
                     .map(TransactionLineDTO::getLcyAmt)
