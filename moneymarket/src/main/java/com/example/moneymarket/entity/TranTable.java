@@ -36,7 +36,7 @@ public class TranTable {
     @Column(name = "Tran_Status", nullable = false)
     private TranStatus tranStatus;
 
-    @Column(name = "Account_No", nullable = false, length = 20)
+    @Column(name = "Account_No", nullable = true, length = 20)
     private String accountNo;
 
     @Column(name = "Tran_Ccy", nullable = false, length = 3)
