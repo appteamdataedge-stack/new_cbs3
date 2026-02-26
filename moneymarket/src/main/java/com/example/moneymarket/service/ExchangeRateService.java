@@ -173,13 +173,6 @@ public class ExchangeRateService {
         // Validate rates (buying < mid < selling)
         validateRates(request.getBuyingRate(), request.getMidRate(), request.getSellingRate());
 
-        // Check for duplicate
-        LocalDate rateDate = request.getRateDate().toLocalDate();
-        if (fxRateMasterRepository.existsByCcyPairAndRateDate(request.getCcyPair(), rateDate)) {
-            throw new IllegalArgumentException(
-                    "Exchange rate already exists for " + request.getCcyPair() + " on " + rateDate);
-        }
-
         LocalDateTime now = LocalDateTime.now();
 
         FxRateMaster fxRate = FxRateMaster.builder()

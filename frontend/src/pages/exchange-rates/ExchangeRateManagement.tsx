@@ -53,7 +53,7 @@ const ExchangeRateManagement: React.FC = () => {
   const [deleteDialog, setDeleteDialog] = useState({ open: false, rateId: 0, ccyPair: '', rateDate: '' });
   const [editingRate, setEditingRate] = useState<ExchangeRate | null>(null);
 
-  const { control, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormData>({
+  const { control, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<FormData>({
     defaultValues: {
       rateDate: '',
       ccyPair: 'USD/BDT',
@@ -397,6 +397,18 @@ const ExchangeRateManagement: React.FC = () => {
                       error={!!errors.buyingRate}
                       helperText={errors.buyingRate?.message}
                       size="small"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        field.onChange(raw);
+                        const buying = parseFloat(raw);
+                        const selling = parseFloat(String(watch('sellingRate') ?? '')) || 0;
+                        if (!isNaN(buying) && buying > 0 && selling > 0) {
+                          const mid = ((buying + selling) / 2).toFixed(4);
+                          setValue('midRate', mid, { shouldValidate: true });
+                        } else {
+                          setValue('midRate', '', { shouldValidate: true });
+                        }
+                      }}
                     />
                   )}
                 />
@@ -416,6 +428,7 @@ const ExchangeRateManagement: React.FC = () => {
                       error={!!errors.midRate}
                       helperText={errors.midRate?.message}
                       size="small"
+                      InputProps={{ readOnly: true }}
                     />
                   )}
                 />
@@ -435,6 +448,18 @@ const ExchangeRateManagement: React.FC = () => {
                       error={!!errors.sellingRate}
                       helperText={errors.sellingRate?.message}
                       size="small"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        field.onChange(raw);
+                        const selling = parseFloat(raw);
+                        const buying = parseFloat(String(watch('buyingRate') ?? '')) || 0;
+                        if (!isNaN(selling) && selling > 0 && buying > 0) {
+                          const mid = ((buying + selling) / 2).toFixed(4);
+                          setValue('midRate', mid, { shouldValidate: true });
+                        } else {
+                          setValue('midRate', '', { shouldValidate: true });
+                        }
+                      }}
                     />
                   )}
                 />

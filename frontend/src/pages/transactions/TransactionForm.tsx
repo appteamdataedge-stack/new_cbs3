@@ -141,6 +141,26 @@ const TransactionForm = () => {
     name: 'lines'
   });
 
+  // Base currency propagation: when line 0's currency is FCY (e.g. USD),
+  // default all subsequent lines' Currency field to the same value until their own account is selected.
+  const baseLineCurrency = watch('lines.0.tranCcy');
+
+  useEffect(() => {
+    const baseCcy = baseLineCurrency;
+    if (!baseCcy) return;
+
+    const currentLines = watch('lines') as any[] | undefined;
+    if (!currentLines || currentLines.length === 0) return;
+
+    currentLines.forEach((line, index) => {
+      if (index === 0) return;
+      // Preserve per-line account currency lock: only update lines without an account selected
+      if (!line?.accountNo && line?.tranCcy !== baseCcy) {
+        setValue(`lines.${index}.tranCcy`, baseCcy);
+      }
+    });
+  }, [baseLineCurrency, setValue, watch]);
+
   // Calculate totals dynamically - useMemo ensures instant updates
   // ✅ FIX ISSUE 2: Calculate totals in correct currency (FCY for USD, LCY for BDT)
   const { totalDebit, totalCredit, isBalanced, isSettlement, displayCurrency, totalDebitFcy, totalCreditFcy } = useMemo(() => {
@@ -324,10 +344,12 @@ const TransactionForm = () => {
 
   // Add a new transaction line
   const addLine = () => {
+    // Default new lines' currency to line 0's currency (if set), otherwise BDT
+    const firstLineCurrency = watch('lines.0.tranCcy') || 'BDT';
     append({
       accountNo: '',
       drCrFlag: DrCrFlag.C,
-      tranCcy: 'BDT',
+      tranCcy: firstLineCurrency,
       fcyAmt: 0,
       exchangeRate: 1,
       lcyAmt: 0,
@@ -561,39 +583,64 @@ const TransactionForm = () => {
       }
     }
 
-    // Calculate totals: LCY for normal; for settlement (2 USD, FCY match) allow LCY mismatch
-    let debitTotal = 0;
-    let creditTotal = 0;
+    // Balance validation:
+    // - For FCY settlement transactions (all legs in same FCY, at least one settlement line): validate FCY only.
+    //   LCY mismatch is expected and will be posted as Gain/Loss by the backend.
+    // - For other transactions (BDT-only or mixed): validate LCY balance as usual.
+    let debitTotalLcy = 0;
+    let creditTotalLcy = 0;
     let debitTotalFcy = 0;
     let creditTotalFcy = 0;
-    data.lines.forEach(line => {
-      const lcy = parseFloat(String(line.lcyAmt));
+
+    data.lines.forEach((line) => {
+      const lcy = parseFloat(String(line.lcyAmt || 0));
       const fcy = parseFloat(String(line.fcyAmt || 0));
       if (line.drCrFlag === DrCrFlag.D) {
-        debitTotal += lcy;
-        debitTotalFcy += fcy;
+        debitTotalLcy += isNaN(lcy) ? 0 : lcy;
+        debitTotalFcy += isNaN(fcy) ? 0 : fcy;
       } else if (line.drCrFlag === DrCrFlag.C) {
-        creditTotal += lcy;
-        creditTotalFcy += fcy;
+        creditTotalLcy += isNaN(lcy) ? 0 : lcy;
+        creditTotalFcy += isNaN(fcy) ? 0 : fcy;
       }
     });
-    debitTotal = Math.round(debitTotal * 100) / 100;
-    creditTotal = Math.round(creditTotal * 100) / 100;
+
+    debitTotalLcy = Math.round(debitTotalLcy * 100) / 100;
+    creditTotalLcy = Math.round(creditTotalLcy * 100) / 100;
     debitTotalFcy = Math.round(debitTotalFcy * 100) / 100;
     creditTotalFcy = Math.round(creditTotalFcy * 100) / 100;
 
-    const isSettlementSubmit = data.lines.length === 2 && data.lines.every((l: any) => (l.tranCcy || '') === 'USD');
-    const fcyMatch = Math.abs(debitTotalFcy - creditTotalFcy) < 0.01;
+    const allSameFcy =
+      data.lines.length > 0 &&
+      data.lines.every(
+        (l) =>
+          (l.tranCcy || '') !== 'BDT' &&
+          (l.tranCcy || '').length > 0 &&
+          (l.tranCcy || '').trim() === (data.lines[0].tranCcy || '').trim()
+      );
 
-    if (isSettlementSubmit) {
-      if (!fcyMatch) {
-        toast.error(`Settlement transaction: FCY debit must equal FCY credit. Debit: ${debitTotalFcy.toFixed(2)} USD, Credit: ${creditTotalFcy.toFixed(2)} USD`);
+    // A settlement line is any FCY line whose rate type is WAE ('wae' in rateTypes map)
+    const hasSettlementLine = data.lines.some((_, index) => rateTypes.get(index) === 'wae');
+
+    if (allSameFcy && hasSettlementLine) {
+      // FCY settlement transaction: validate FCY balance only
+      const fcyDiff = Math.abs(debitTotalFcy - creditTotalFcy);
+      if (fcyDiff > 0.001) {
+        const ccy = data.lines[0].tranCcy || 'USD';
+        toast.error(
+          `Transaction is not balanced in FCY. Debit: ${debitTotalFcy.toFixed(2)} ${ccy}, Credit: ${creditTotalFcy.toFixed(2)} ${ccy}`
+        );
         return;
       }
-      // Allow submit; LCY difference will be posted as Gain/Loss
-    } else if (Math.abs(debitTotal - creditTotal) >= 0.01) {
-      toast.error(`Transaction is not balanced. Debit: ${debitTotal.toFixed(2)} BDT, Credit: ${creditTotal.toFixed(2)} BDT`);
-      return;
+      // LCY imbalance is intentional — backend will post Gain/Loss GL entries
+    } else {
+      // BDT or mixed-currency transaction: validate LCY balance
+      const lcyDiff = Math.abs(debitTotalLcy - creditTotalLcy);
+      if (lcyDiff >= 0.01) {
+        toast.error(
+          `Transaction is not balanced. Debit: ${debitTotalLcy.toFixed(2)} BDT, Credit: ${creditTotalLcy.toFixed(2)} BDT`
+        );
+        return;
+      }
     }
 
     // Ensure all numeric fields are properly formatted and rounded to 2 decimals
