@@ -801,6 +801,7 @@ public class TransactionService {
      * Triggers:
      *   - Asset CR + Liability DR (any order)
      *   - Liability DR + Liability CR (Liability-to-Liability; only the DR leg triggers)
+     *   - Asset DR + Asset CR (Asset-to-Asset; only the CR leg triggers)
      */
     private boolean isSettlementTransaction(List<TransactionLineDTO> lines) {
         if (lines == null || lines.size() != 2) return false;
@@ -819,6 +820,9 @@ public class TransactionService {
             // Liability to Liability — the DEBIT leg always triggers settlement
             if (info0.isLiabilityAccount() && info1.isLiabilityAccount()
                     && (liabilityDr0 || liabilityDr1)) return true;
+            // Asset to Asset — the CREDIT leg always triggers settlement
+            if (info0.isAssetAccount() && info1.isAssetAccount()
+                    && (assetCr0 || assetCr1)) return true;
             return false;
         } catch (Exception e) {
             return false;
