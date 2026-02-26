@@ -92,6 +92,21 @@ public class TransactionService {
 
         boolean isSettlement = isSettlementTransaction(transactionRequestDTO.getLines());
 
+        // Mid rate for FCY: used for non-settlement sides (Liability CR, Asset DR) and for Asset DR + Liability CR (both legs)
+        BigDecimal midRateFcy = null;
+        String fcyCurrency = transactionRequestDTO.getLines().stream()
+                .map(TransactionLineDTO::getTranCcy)
+                .filter(ccy -> ccy != null && !"BDT".equals(ccy))
+                .findFirst()
+                .orElse(null);
+        if (fcyCurrency != null) {
+            try {
+                midRateFcy = exchangeRateService.getExchangeRate(fcyCurrency, tranDate);
+            } catch (BusinessException e) {
+                midRateFcy = exchangeRateService.getLatestMidRate(fcyCurrency);
+            }
+        }
+
         // Process each transaction line - create in Entry status
         int lineNumber = 1;
         for (TransactionLineDTO lineDTO : transactionRequestDTO.getLines()) {
@@ -100,8 +115,8 @@ public class TransactionService {
                 throw new ResourceNotFoundException("Account", "Account Number", lineDTO.getAccountNo());
             }
             
-            // Get account info for GL number
-            unifiedAccountService.getAccountInfo(lineDTO.getAccountNo());
+            // Get account info for GL number and for settlement rate selection
+            UnifiedAccountService.AccountInfo accountInfo = unifiedAccountService.getAccountInfo(lineDTO.getAccountNo());
             
             // ✅ FIX ISSUE 4: Validate transaction currency matches account currency
             String accountCurrency = unifiedAccountService.getAccountCurrency(lineDTO.getAccountNo());
@@ -134,16 +149,29 @@ public class TransactionService {
                         lineDTO.getAccountNo() + ": " + e.getMessage());
             }
             
-            // Per-account WAE for settlement (FCY) lines; otherwise use request rate
+            // Exchange rate and LCY: Liability DR / Asset CR → WAE (settlement); Liability CR / Asset DR → MID (non-settlement)
+            // Asset DR + Liability CR (non-settlement): both use MID. No gain/loss legs.
             BigDecimal lcyAmt = lineDTO.getLcyAmt();
             BigDecimal exchangeRate = lineDTO.getExchangeRate();
-            if (isSettlement && lineDTO.getTranCcy() != null && !"BDT".equals(lineDTO.getTranCcy())) {
-                BigDecimal lineWae = balanceService.getComputedAccountBalance(lineDTO.getAccountNo(), tranDate).getWae();
-                if (lineWae == null) {
-                    lineWae = exchangeRateService.getExchangeRate(lineDTO.getTranCcy(), tranDate);
+            boolean isFcy = lineDTO.getTranCcy() != null && !"BDT".equals(lineDTO.getTranCcy());
+            if (isFcy && midRateFcy != null) {
+                boolean liability = accountInfo.isLiabilityAccount();
+                boolean asset = accountInfo.isAssetAccount();
+                boolean isDr = lineDTO.getDrCrFlag() == DrCrFlag.D;
+                boolean isCr = lineDTO.getDrCrFlag() == DrCrFlag.C;
+                // Settlement side = Liability DR or Asset CR → use WAE. Non-settlement = Liability CR or Asset DR → use MID.
+                boolean useWaeForThisLeg = isSettlement && ((liability && isDr) || (asset && isCr));
+                if (useWaeForThisLeg) {
+                    BigDecimal lineWae = balanceService.getComputedAccountBalance(lineDTO.getAccountNo(), tranDate).getWae();
+                    if (lineWae == null) {
+                        lineWae = midRateFcy;
+                    }
+                    exchangeRate = lineWae;
+                    lcyAmt = lineDTO.getFcyAmt().multiply(lineWae).setScale(2, RoundingMode.HALF_UP);
+                } else {
+                    exchangeRate = midRateFcy;
+                    lcyAmt = lineDTO.getFcyAmt().multiply(midRateFcy).setScale(2, RoundingMode.HALF_UP);
                 }
-                exchangeRate = lineWae;
-                lcyAmt = lineDTO.getFcyAmt().multiply(lineWae).setScale(2, RoundingMode.HALF_UP);
             }
             
             // Resolve GL_Num at insert time (avoids master-table join in EOD Step 4)
@@ -187,6 +215,20 @@ public class TransactionService {
                                     .map(TranTable::getLcyAmt)
                                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     );
+        }
+
+        // Core rule: total LCY debit must equal total LCY credit across ALL legs (gain/loss legs balance the difference)
+        BigDecimal totalDrLcy = transactions.stream()
+                .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+                .map(t -> t.getLcyAmt() != null ? t.getLcyAmt() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalCrLcy = transactions.stream()
+                .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                .map(t -> t.getLcyAmt() != null ? t.getLcyAmt() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (totalDrLcy.compareTo(totalCrLcy) != 0) {
+            log.error("FCY settlement LCY imbalance: Total DR LCY={}, Total CR LCY={}. Transaction ID: {}", totalDrLcy, totalCrLcy, tranId);
+            throw new BusinessException("Settlement gain/loss calculation error: total debit LCY (" + totalDrLcy + ") must equal total credit LCY (" + totalCrLcy + "). Please contact support.");
         }
 
         // Save all transaction lines (legs + any settlement rows) in one transaction
