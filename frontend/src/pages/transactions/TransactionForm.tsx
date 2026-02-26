@@ -1065,7 +1065,7 @@ const TransactionForm = () => {
                     render={({ field }) => {
                       const currency = watch(`lines.${index}.tranCcy`) || 'BDT';
                       const wae = accountBalances.get(`${index}`)?.wae;
-                      const midRate = Number(field.value || 0);
+                      const midRateFromApi = exchangeRates.get(index)?.midRate;
                       return (
                         <TextField
                           {...field}
@@ -1078,7 +1078,7 @@ const TransactionForm = () => {
                           error={!!errors.lines?.[index]?.exchangeRate}
                           helperText={
                             currency === 'USD'
-                              ? `Mid Rate: ${midRate ? midRate.toFixed(4) : 'N/A'} • WAE: ${wae !== undefined && wae !== null ? wae.toFixed(4) : 'N/A'}`
+                              ? `Mid Rate: ${midRateFromApi !== undefined && midRateFromApi != null ? Number(midRateFromApi).toFixed(4) : 'N/A'} • WAE: ${wae !== undefined && wae !== null ? wae.toFixed(4) : 'N/A'}`
                               : 'Always 1 for BDT'
                           }
                           disabled={isLoading}

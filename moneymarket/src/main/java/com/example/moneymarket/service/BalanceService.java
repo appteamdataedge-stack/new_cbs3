@@ -371,9 +371,10 @@ public class BalanceService {
     }
 
     /**
-     * Calculate WAE (Weighted Average Exchange Rate) for FCY accounts.
-     * Formula: computedBalanceLcy / computedBalanceFCY (4 decimal places).
-     * When FCY balance is zero, returns mid rate for the currency so WAE is defined.
+     * Calculate WAE (Weighted Average Exchange Rate) for FCY accounts from acc_bal-derived balances only.
+     * Formula: WAE = computedBalanceLcy / computedBalanceFCY (4 decimal places).
+     * Source: acc_bal (prev day closing + today CR - today DR) — never from fx_rates/exchange_rate table.
+     * When FCY balance is zero, returns null (do not fall back to mid rate, so UI can show WAE vs Mid separately).
      */
     private BigDecimal calculateWae(String accountCcy, BigDecimal computedBalanceLcy, BigDecimal computedBalanceFcy, LocalDate systemDate) {
         if (accountCcy == null || "BDT".equalsIgnoreCase(accountCcy)) {
@@ -383,12 +384,8 @@ public class BalanceService {
             return null;
         }
         if (computedBalanceFcy.compareTo(BigDecimal.ZERO) == 0) {
-            try {
-                return exchangeRateService.getExchangeRate(accountCcy, systemDate);
-            } catch (Exception e) {
-                log.debug("WAE fallback: could not get mid rate for {} on {}, returning null", accountCcy, systemDate);
-                return null;
-            }
+            log.debug("WAE: FCY balance is zero for {} — returning null (no mid-rate fallback)", accountCcy);
+            return null;
         }
         return computedBalanceLcy.abs()
                 .divide(computedBalanceFcy.abs(), 4, RoundingMode.HALF_UP);

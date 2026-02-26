@@ -9,7 +9,29 @@
       "Bash(echo no yml at root:*)",
       "Bash(head:*)",
       "Bash(vercel:*)",
-      "Bash(cd /c/new_cbs3/cbs3/frontend && npm run build 2>&1)"
+      "Bash(cd /c/new_cbs3/cbs3/frontend && npm run build 2>&1)",
+      "Bash(tail:*)",
+      "Bash(cd /c/new_cbs3/cbs3 && git push origin main 2>&1)",
+      "Bash(ls:*)",
+      "Bash(done)",
+      "Bash(echo COMPILE OK:*)",
+      "Bash(grep:*)",
+      "Bash(mysql:*)",
+      "Bash(MYSQL_PWD='asif@yasir123' mysql:*)",
+      "Bash(export MYSQL_PWD='asif@yasir123' && mysql -u root moneymarketdb -e \"SELECT Ccy_Code, Mid_Rate, Rate_Date FROM fx_rate_master WHERE Ccy_Code='USD' ORDER BY Rate_Date DESC LIMIT 3;\" 2>/dev/null && mysql -u root moneymarketdb -e \"SELECT Ccy_Pair, WAE_Rate, FCY_Balance FROM wae_master LIMIT 5;\" 2>/dev/null)",
+      "Bash(export:*)",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\":*)",
+      "Bash(curl -s http://localhost:8082/api/eod/status 2>/dev/null | python3 -m json.tool 2>/dev/null || curl -s http://localhost:8082/api/eod/status 2>/dev/null)",
+      "Bash(curl -s \"http://localhost:8082/api/accounts/100000248001/balance\")",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(echo \\(raw response above\\):*)",
+      "Bash(kill:*)",
+      "Bash(MYSQL_PWD=\"asif@yasir123\" mysql:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(grep Tests run::*)"
     ]
   }
 }

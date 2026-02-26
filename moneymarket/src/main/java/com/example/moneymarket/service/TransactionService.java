@@ -511,14 +511,26 @@ public class TransactionService {
             }
         }
         
+        // Allow verification for Entry and Posted (maker-checker submit not yet implemented, so Entry → Verified is valid).
+        // Block only invalid statuses: Future (value-dated, not yet posted) and any unknown.
+        TranStatus currentStatus = transactions.get(0).getTranStatus();
+        if (currentStatus == TranStatus.Future) {
+            throw new BusinessException("Future-dated transactions must be posted first before they can be verified.");
+        }
+        // Entry and Posted are allowed to proceed to Verified.
+        
         // Update status to Verified
         transactions.forEach(t -> t.setTranStatus(TranStatus.Verified));
         tranTableRepository.saveAll(transactions);
         
-        // Create transaction history records for each transaction line
+        // Create transaction history records for each transaction line (skip settlement legs: account_no is null)
         // This populates TXN_HIST_ACCT table for Statement of Accounts
         String verifierUserId = "SYSTEM"; // TODO: Get from security context when authentication is implemented
         for (TranTable transaction : transactions) {
+            if (transaction.getAccountNo() == null) {
+                log.debug("Skipping transaction history for settlement leg (no account): {}", transaction.getTranId());
+                continue;
+            }
             transactionHistoryService.createTransactionHistory(transaction, verifierUserId);
         }
         
@@ -774,7 +786,13 @@ public class TransactionService {
     /**
      * Build FCY settlement rows when WAE != Mid.
      * Settlement triggers: Liability FCY → DEBIT only; Asset FCY → CREDIT only.
-     * Each trigger produces ONE row. IDs assigned consecutively starting at -3.
+     * Each trigger produces ONE gain or loss row (not both). IDs assigned consecutively starting at -3.
+     * 
+     * Settlement Formula:
+     * - LIABILITY DR: if mid_rate > WAE → LOSS; if mid_rate < WAE → GAIN
+     * - ASSET CR: if mid_rate < WAE → LOSS; if mid_rate > WAE → GAIN
+     * 
+     * Amount = |mid_rate - WAE| × FCY_amount
      */
     private List<TranTable> buildFcySettlementRows(String baseTranId, List<TranTable> legs, LocalDate tranDate, LocalDate valueDate) {
         List<TranTable> out = new ArrayList<>();
@@ -825,60 +843,96 @@ public class TransactionService {
         // Asset Dr + Liability Cr → no settlement
         if (!trigger0 && !trigger1) return out;
 
+        // For Asset CR + Liability DR: BOTH sides are evaluated independently; each can add one gain/loss leg (-3, -4).
+        // WAE must come from acc_bal per account (no mid-rate fallback) so each side can have a distinct gain/loss.
         int nextSuffix = 3;
+        
+        // Process leg 0 if triggered (e.g. Asset CR or Liability DR)
         if (trigger0 && leg0.getFcyAmt() != null && leg0.getFcyAmt().compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal wae = wae0;
             BigDecimal fcy = leg0.getFcyAmt();
-            BigDecimal amount;
-            boolean isGain;
+            
+            // Apply correct settlement formula
             if (liability0 && dr0) {
+                // LIABILITY DEBIT: compare mid vs WAE
                 if (mid.compareTo(wae) > 0) {
-                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = false;
-                } else {
-                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = true;
+                    // mid > WAE → LOSS
+                    BigDecimal lossAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
+                        nextSuffix++;
+                    }
+                } else if (mid.compareTo(wae) < 0) {
+                    // mid < WAE → GAIN
+                    BigDecimal gainAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
+                        nextSuffix++;
+                    }
                 }
-            } else {
+            } else if (asset0 && cr0) {
+                // ASSET CREDIT: compare mid vs WAE
                 if (mid.compareTo(wae) < 0) {
-                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = false;
-                } else {
-                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = true;
+                    // mid < WAE → LOSS
+                    BigDecimal lossAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
+                        nextSuffix++;
+                    }
+                } else if (mid.compareTo(wae) > 0) {
+                    // mid > WAE → GAIN
+                    BigDecimal gainAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
+                        nextSuffix++;
+                    }
                 }
-            }
-            if (amount.compareTo(BigDecimal.ZERO) > 0) {
-                addSettlementRow(baseTranId, tranDate, valueDate, amount, isGain, nextSuffix, out);
-                nextSuffix += 1;
             }
         }
+        
+        // Process leg 1 if triggered
         if (trigger1 && leg1.getFcyAmt() != null && leg1.getFcyAmt().compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal wae = wae1;
             BigDecimal fcy = leg1.getFcyAmt();
-            BigDecimal amount;
-            boolean isGain;
+            
+            // Apply correct settlement formula
             if (liability1 && dr1) {
+                // LIABILITY DEBIT: compare mid vs WAE
                 if (mid.compareTo(wae) > 0) {
-                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = false;
-                } else {
-                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = true;
+                    // mid > WAE → LOSS
+                    BigDecimal lossAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
+                        nextSuffix++;
+                    }
+                } else if (mid.compareTo(wae) < 0) {
+                    // mid < WAE → GAIN
+                    BigDecimal gainAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
+                        nextSuffix++;
+                    }
                 }
-            } else {
+            } else if (asset1 && cr1) {
+                // ASSET CREDIT: compare mid vs WAE
                 if (mid.compareTo(wae) < 0) {
-                    amount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = false;
-                } else {
-                    amount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    isGain = true;
+                    // mid < WAE → LOSS
+                    BigDecimal lossAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
+                        nextSuffix++;
+                    }
+                } else if (mid.compareTo(wae) > 0) {
+                    // mid > WAE → GAIN
+                    BigDecimal gainAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
+                        nextSuffix++;
+                    }
                 }
-            }
-            if (amount.compareTo(BigDecimal.ZERO) > 0) {
-                addSettlementRow(baseTranId, tranDate, valueDate, amount, isGain, nextSuffix, out);
             }
         }
+        
         return out;
     }
 
@@ -898,7 +952,7 @@ public class TransactionService {
                     .accountNo(null)
                     .tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE)
                     .lcyAmt(amount).debitAmount(BigDecimal.ZERO).creditAmount(amount)
-                    .narration("FX Gain").udf1(null).glNum(FX_GAIN_GL).build());
+                    .narration("FX Gain on Settlement").udf1(null).glNum(FX_GAIN_GL).build());
         } else {
             out.add(TranTable.builder()
                     .tranId(id).tranDate(tranDate).valueDate(valueDate)
@@ -906,7 +960,7 @@ public class TransactionService {
                     .accountNo(null)
                     .tranCcy("BDT").fcyAmt(BigDecimal.ZERO).exchangeRate(BigDecimal.ONE)
                     .lcyAmt(amount).debitAmount(amount).creditAmount(BigDecimal.ZERO)
-                    .narration("FX Loss").udf1(null).glNum(FX_LOSS_GL).build());
+                    .narration("FX Loss on Settlement").udf1(null).glNum(FX_LOSS_GL).build());
         }
     }
 
