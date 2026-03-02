@@ -22,5 +22,6 @@ public class TransactionLineResponseDTO {
     private BigDecimal fcyAmt;
     private BigDecimal exchangeRate;
     private BigDecimal lcyAmt;
+    private String glNum;    // populated for settlement rows (accountNo=null); null for normal account legs
     private String udf1;
 }

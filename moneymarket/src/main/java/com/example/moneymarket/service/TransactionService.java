@@ -149,8 +149,10 @@ public class TransactionService {
                         lineDTO.getAccountNo() + ": " + e.getMessage());
             }
             
-            // Exchange rate and LCY: Liability DR / Asset CR → WAE (settlement); Liability CR / Asset DR → MID (non-settlement)
-            // Asset DR + Liability CR (non-settlement): both use MID. No gain/loss legs.
+            // Exchange rate and LCY per leg:
+            //   Settlement trigger (Liability DR, Asset CR) → WAE of THIS account from acc_bal
+            //   Non-settlement side (Liability CR, Asset DR) → MID rate
+            //   Asset DR + Liability CR (both non-settlement)  → both MID, no gain/loss rows
             BigDecimal lcyAmt = lineDTO.getLcyAmt();
             BigDecimal exchangeRate = lineDTO.getExchangeRate();
             boolean isFcy = lineDTO.getTranCcy() != null && !"BDT".equals(lineDTO.getTranCcy());
@@ -159,7 +161,9 @@ public class TransactionService {
                 boolean asset = accountInfo.isAssetAccount();
                 boolean isDr = lineDTO.getDrCrFlag() == DrCrFlag.D;
                 boolean isCr = lineDTO.getDrCrFlag() == DrCrFlag.C;
-                // Settlement side = Liability DR or Asset CR → use WAE. Non-settlement = Liability CR or Asset DR → use MID.
+                // Each leg resolves its OWN rate independently — never share a rate variable across legs.
+                // Settlement trigger = Liability DR or Asset CR → WAE from acc_bal for THIS account.
+                // All other sides → MID rate.
                 boolean useWaeForThisLeg = isSettlement && ((liability && isDr) || (asset && isCr));
                 if (useWaeForThisLeg) {
                     BigDecimal lineWae = balanceService.getComputedAccountBalance(lineDTO.getAccountNo(), tranDate).getWae();
@@ -168,9 +172,15 @@ public class TransactionService {
                     }
                     exchangeRate = lineWae;
                     lcyAmt = lineDTO.getFcyAmt().multiply(lineWae).setScale(2, RoundingMode.HALF_UP);
+                    log.debug("Rate assignment: account {} ({} {}) → WAE={}, LCY={}",
+                            lineDTO.getAccountNo(), liability ? "Liability" : "Asset",
+                            isDr ? "DR" : "CR", exchangeRate, lcyAmt);
                 } else {
                     exchangeRate = midRateFcy;
                     lcyAmt = lineDTO.getFcyAmt().multiply(midRateFcy).setScale(2, RoundingMode.HALF_UP);
+                    log.debug("Rate assignment: account {} ({} {}) → MID={}, LCY={}",
+                            lineDTO.getAccountNo(), liability ? "Liability" : "Asset",
+                            isDr ? "DR" : "CR", exchangeRate, lcyAmt);
                 }
             }
             
@@ -830,28 +840,33 @@ public class TransactionService {
     }
 
     /**
-     * Build FCY settlement rows when WAE != Mid.
-     * Settlement triggers: Liability FCY → DEBIT only; Asset FCY → CREDIT only.
-     * Each trigger produces ONE gain or loss row (not both). IDs assigned consecutively starting at -3.
-     * 
-     * Settlement Formula:
-     * - LIABILITY DR: if mid_rate > WAE → LOSS; if mid_rate < WAE → GAIN
-     * - ASSET CR: if mid_rate < WAE → LOSS; if mid_rate > WAE → GAIN
-     * 
-     * Amount = |mid_rate - WAE| × FCY_amount
+     * Build FCY settlement rows (gain/loss legs) for each triggered leg.
+     *
+     * Settlement triggers (one gain/loss row each):
+     *   - Liability DR  → WAE of this account vs MID
+     *   - Asset CR      → WAE of this account vs MID
+     *
+     * Non-settlement sides (Liability CR, Asset DR, Asset DR + Liability CR) → no gain/loss row.
+     *
+     * WAE per triggered leg is read directly from leg.getExchangeRate(), which was already
+     * resolved from acc_bal for that specific account in the createTransaction main loop.
+     * Using the same WAE that determined the leg's lcyAmt keeps the accounting consistent and
+     * avoids a second (potentially different) acc_bal lookup here.
+     *
+     * Settlement formulas:
+     *   LIABILITY DR: mid > WAE → LOSS = (mid − WAE) × FCY;  mid < WAE → GAIN = (WAE − mid) × FCY
+     *   ASSET CR:     mid < WAE → LOSS = (WAE − mid) × FCY;  mid > WAE → GAIN = (mid − WAE) × FCY
+     *
+     * Row IDs are assigned consecutively from suffix -3 onward.
      */
-    private List<TranTable> buildFcySettlementRows(String baseTranId, List<TranTable> legs, LocalDate tranDate, LocalDate valueDate) {
+    private List<TranTable> buildFcySettlementRows(String baseTranId, List<TranTable> legs,
+                                                   LocalDate tranDate, LocalDate valueDate) {
         List<TranTable> out = new ArrayList<>();
         if (legs.size() != 2) return out;
-        TranTable leg0 = legs.get(0);
-        TranTable leg1 = legs.get(1);
-        String ccy = leg0.getTranCcy();
+
+        String ccy = legs.get(0).getTranCcy();
         if (ccy == null || "BDT".equals(ccy)) return out;
 
-        UnifiedAccountService.AccountInfo info0 = unifiedAccountService.getAccountInfo(leg0.getAccountNo());
-        UnifiedAccountService.AccountInfo info1 = unifiedAccountService.getAccountInfo(leg1.getAccountNo());
-        BigDecimal wae0 = balanceService.getComputedAccountBalance(leg0.getAccountNo(), tranDate).getWae();
-        BigDecimal wae1 = balanceService.getComputedAccountBalance(leg1.getAccountNo(), tranDate).getWae();
         // Fetch mid rate for the transaction date; fall back to the latest available rate
         // if no rate exists on or before that date (e.g. test environments with date mismatch).
         BigDecimal mid;
@@ -863,122 +878,79 @@ public class TransactionService {
                 log.warn("No mid rate available for {} at all – skipping settlement rows", ccy);
                 return out;
             }
-            log.warn("No mid rate found for {} on {} – using latest available rate {} for settlement calculation",
+            log.warn("No mid rate found for {} on {} – using latest available rate {} for settlement",
                     ccy, tranDate, mid);
         }
-        if (wae0 == null) wae0 = mid;
-        if (wae1 == null) wae1 = mid;
 
-        if (wae0 != null && wae1 != null && mid != null
-                && wae0.compareTo(mid) == 0 && wae1.compareTo(mid) == 0) {
-            return out;
-        }
-
-        boolean liability0 = info0.isLiabilityAccount();
-        boolean asset0 = info0.isAssetAccount();
-        boolean liability1 = info1.isLiabilityAccount();
-        boolean asset1 = info1.isAssetAccount();
-        boolean dr0 = leg0.getDrCrFlag() == DrCrFlag.D;
-        boolean cr0 = leg0.getDrCrFlag() == DrCrFlag.C;
-        boolean dr1 = leg1.getDrCrFlag() == DrCrFlag.D;
-        boolean cr1 = leg1.getDrCrFlag() == DrCrFlag.C;
-
-        // Trigger: Liability Dr or Asset Cr
-        boolean trigger0 = (liability0 && dr0) || (asset0 && cr0);
-        boolean trigger1 = (liability1 && dr1) || (asset1 && cr1);
-        // Asset Dr + Liability Cr → no settlement
-        if (!trigger0 && !trigger1) return out;
-
-        // For Asset CR + Liability DR: BOTH sides are evaluated independently; each can add one gain/loss leg (-3, -4).
-        // WAE must come from acc_bal per account (no mid-rate fallback) so each side can have a distinct gain/loss.
         int nextSuffix = 3;
-        
-        // Process leg 0 if triggered (e.g. Asset CR or Liability DR)
-        if (trigger0 && leg0.getFcyAmt() != null && leg0.getFcyAmt().compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal wae = wae0;
-            BigDecimal fcy = leg0.getFcyAmt();
-            
-            // Apply correct settlement formula
-            if (liability0 && dr0) {
-                // LIABILITY DEBIT: compare mid vs WAE
-                if (mid.compareTo(wae) > 0) {
-                    // mid > WAE → LOSS
-                    BigDecimal lossAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                } else if (mid.compareTo(wae) < 0) {
-                    // mid < WAE → GAIN
-                    BigDecimal gainAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                }
-            } else if (asset0 && cr0) {
-                // ASSET CREDIT: compare mid vs WAE
-                if (mid.compareTo(wae) < 0) {
-                    // mid < WAE → LOSS
-                    BigDecimal lossAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                } else if (mid.compareTo(wae) > 0) {
-                    // mid > WAE → GAIN
-                    BigDecimal gainAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                }
+
+        for (TranTable leg : legs) {
+            if (leg.getAccountNo() == null) continue;  // skip GL-only rows (shouldn't be present at this stage)
+
+            UnifiedAccountService.AccountInfo info;
+            try {
+                info = unifiedAccountService.getAccountInfo(leg.getAccountNo());
+            } catch (Exception e) {
+                log.warn("Cannot resolve account info for {} – skipping settlement computation for this leg",
+                        leg.getAccountNo());
+                continue;
             }
-        }
-        
-        // Process leg 1 if triggered
-        if (trigger1 && leg1.getFcyAmt() != null && leg1.getFcyAmt().compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal wae = wae1;
-            BigDecimal fcy = leg1.getFcyAmt();
-            
-            // Apply correct settlement formula
-            if (liability1 && dr1) {
-                // LIABILITY DEBIT: compare mid vs WAE
-                if (mid.compareTo(wae) > 0) {
-                    // mid > WAE → LOSS
-                    BigDecimal lossAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                } else if (mid.compareTo(wae) < 0) {
-                    // mid < WAE → GAIN
-                    BigDecimal gainAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                }
-            } else if (asset1 && cr1) {
-                // ASSET CREDIT: compare mid vs WAE
-                if (mid.compareTo(wae) < 0) {
-                    // mid < WAE → LOSS
-                    BigDecimal lossAmount = wae.subtract(mid).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (lossAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, lossAmount, false, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                } else if (mid.compareTo(wae) > 0) {
-                    // mid > WAE → GAIN
-                    BigDecimal gainAmount = mid.subtract(wae).multiply(fcy).setScale(2, RoundingMode.HALF_UP);
-                    if (gainAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        addSettlementRow(baseTranId, tranDate, valueDate, gainAmount, true, nextSuffix, out);
-                        nextSuffix++;
-                    }
-                }
+
+            boolean isLiabilityDr = info.isLiabilityAccount() && leg.getDrCrFlag() == DrCrFlag.D;
+            boolean isAssetCr     = info.isAssetAccount()     && leg.getDrCrFlag() == DrCrFlag.C;
+
+            if (!isLiabilityDr && !isAssetCr) {
+                // Non-settlement side (Liability CR or Asset DR): no gain/loss row for this leg.
+                log.debug("Settlement skip: account {} ({} {}) is non-settlement side",
+                        leg.getAccountNo(),
+                        info.isLiabilityAccount() ? "Liability" : "Asset",
+                        leg.getDrCrFlag());
+                continue;
             }
+
+            // WAE for this triggered leg: the main loop already resolved WAE from acc_bal and stored
+            // it as leg.exchangeRate (Liability DR → WAE_DR; Asset CR → WAE_CR).
+            // Using leg.getExchangeRate() keeps WAE consistent with the lcyAmt already assigned to
+            // this leg, guaranteeing that the gain/loss amount exactly balances the LCY difference.
+            BigDecimal wae = leg.getExchangeRate();
+            if (wae == null) {
+                log.warn("WAE is null on triggered leg {} – cannot compute gain/loss, skipping", leg.getTranId());
+                continue;
+            }
+
+            BigDecimal fcy = leg.getFcyAmt();
+            if (fcy == null || fcy.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            int midVsWae = mid.compareTo(wae);
+            if (midVsWae == 0) {
+                log.debug("WAE == MID ({}) for leg {} – no gain/loss row needed", wae, leg.getTranId());
+                continue;
+            }
+
+            // |mid − WAE| × FCY  (same formula for both trigger types; direction determines gain vs loss)
+            BigDecimal amount = mid.subtract(wae).abs().multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            boolean isGain;
+            if (isLiabilityDr) {
+                // LIABILITY DR: bank debit is at WAE; if MID > WAE bank paid out more → LOSS
+                //               if MID < WAE bank paid out less  → GAIN
+                isGain = midVsWae < 0;   // mid < WAE → GAIN
+            } else {
+                // ASSET CR: bank credit is at WAE; if MID > WAE bank received more → GAIN
+                //           if MID < WAE bank received less        → LOSS
+                isGain = midVsWae > 0;   // mid > WAE → GAIN
+            }
+
+            log.info("FCY settlement {}: {} leg {}, account={}, WAE={}, MID={}, FCY={}, {} amount={} BDT",
+                    isGain ? "GAIN" : "LOSS",
+                    isLiabilityDr ? "Liability-DR" : "Asset-CR",
+                    leg.getTranId(), leg.getAccountNo(), wae, mid, fcy,
+                    isGain ? "GAIN" : "LOSS", amount);
+
+            addSettlementRow(baseTranId, tranDate, valueDate, amount, isGain, nextSuffix++, out);
         }
-        
+
         return out;
     }
 
@@ -1125,6 +1097,7 @@ public class TransactionService {
                             .fcyAmt(tran.getFcyAmt())
                             .exchangeRate(tran.getExchangeRate())
                             .lcyAmt(tran.getLcyAmt())
+                            .glNum(tran.getGlNum())
                             .udf1(tran.getNarration())
                             .build();
                 })
