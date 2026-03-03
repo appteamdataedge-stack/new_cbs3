@@ -1,0 +1,157 @@
+Fix FCY-to-FCY Settlement: Exchange Rate Assignment and Gain/Loss Leg Generation
+=================================================================
+OVERVIEW OF ALL BROKEN SCENARIOS
+Two scenarios are broken:
+
+Liability DR → Liability CR — Both legs use WAE; CR leg should use mid rate; only 2 legs generated instead of 3
+Asset DR → Asset CR — Both legs use CR account's WAE; DR leg should use mid rate; only 2 legs generated instead of 3
+
+=================================================================
+SETTLEMENT RULES — WHICH SIDE USES WHICH RATE
+Settlement is ONLY triggered for:
+→ Liability account on the DR side
+→ Asset account on the CR side
+Rate assignment per leg (each leg resolves its OWN rate independently):
+Liability DR  → WAE of THIS account     (settlement)
+Liability CR  → MID RATE                (non-settlement)
+Asset CR      → WAE of THIS account     (settlement)
+Asset DR      → MID RATE                (non-settlement)
+Core fix: Each leg must resolve its rate from its own account. Never copy or share a rate variable across legs.
+Rate resolution logic per leg:
+if (accountType === 'ASSET' && drCrFlag === 'CR')      → use WAE from acc_bal for THIS account
+if (accountType === 'LIABILITY' && drCrFlag === 'DR')   → use WAE from acc_bal for THIS account
+else                                                    → use mid_rate
+=================================================================
+TRANSACTION LEG COUNTS PER SCENARIO
+Liability DR + Liability CR   → 3 legs
+Asset DR + Asset CR           → 3 legs
+Liability DR + Asset CR       → 4 legs
+Asset DR + Liability CR       → 2 legs (no gain/loss)
+=================================================================
+CORRECT BEHAVIOR PER SCENARIO
+Liability DR → Liability CR (FCY = 10 USD, Mid Rate = 115.5, WAE of DR account = 114.0):
+Leg -1: DR Liability,   USD 10, rate = 114.0000 (WAE),      LCY = 10 × 114.0 = 1140.00
+Leg -2: CR Liability,   USD 10, rate = 115.5000 (MID RATE), LCY = 10 × 115.5 = 1155.00
+Leg -3: DR FX Loss GL,  BDT 15.00
+
+LCY check: 1140 (DR) + 15 (Loss DR) = 1155 (CR) ✓
+Asset DR → Asset CR (FCY = 10 USD, Mid Rate = 115.0, WAE of CR account = 115.5):
+Leg -1: DR Asset,       USD 10, rate = 115.0000 (MID RATE), LCY = 10 × 115.0 = 1150.00
+Leg -2: CR Asset,       USD 10, rate = 115.5000 (WAE),      LCY = 10 × 115.5 = 1155.00
+Leg -3: DR FX Loss GL,  BDT 5.00
+
+LCY check: 1150 (DR) + 5 (Loss DR) = 1155 (CR) ✓
+=================================================================
+SETTLEMENT GAIN/LOSS FORMULAS
+For LIABILITY DR (settlement side):
+WAE = acc_bal LCY balance / acc_bal FCY balance
+
+If mid_rate > WAE:  LOSS = (mid_rate - WAE) × FCY_amount  → DR FX Loss GL (240203002)
+If mid_rate < WAE:  GAIN = (WAE - mid_rate) × FCY_amount  → CR FX Gain GL (140203002)
+
+LCY of DR leg = FCY × WAE
+For ASSET CR (settlement side):
+WAE = acc_bal LCY balance / acc_bal FCY balance
+
+If mid_rate < WAE:  LOSS = (WAE - mid_rate) × FCY_amount  → DR FX Loss GL (240203002)
+If mid_rate > WAE:  GAIN = (mid_rate - WAE) × FCY_amount  → CR FX Gain GL (140203002)
+
+LCY of CR leg = FCY × WAE
+Non-settlement sides (Asset DR, Liability CR) → skip gain/loss entirely.
+=================================================================
+GAIN/LOSS LEG STRUCTURE IN TRAN TABLE
+Loss leg:
+  tran_id        = {base_tran_id}-3
+  dr_cr_flag     = DR
+  account_no     = NULL        ← must be null, never populate
+  gl_number      = 240203002
+  account_ccy    = BDT
+  exrate         = 1.0000
+  lcy_amount     = loss amount
+  debit_amount   = loss amount
+  credit_amount  = 0.00
+  narration      = "FX Loss on Settlement"
+
+Gain leg:
+  tran_id        = {base_tran_id}-3 (or -4 if second gain/loss leg in Liability+Asset scenario)
+  dr_cr_flag     = CR
+  account_no     = NULL        ← must be null, never populate
+  gl_number      = 140203002
+  account_ccy    = BDT
+  exrate         = 1.0000
+  lcy_amount     = gain amount
+  debit_amount   = 0.00
+  credit_amount  = gain amount
+  narration      = "FX Gain on Settlement"
+=================================================================
+LCY BALANCE VALIDATION (must always hold)
+Sum of all DR leg LCY amounts = Sum of all CR leg LCY amounts
+Add a validation log/error after leg generation if total DR LCY ≠ total CR LCY.
+=================================================================
+ROOT CAUSE SEARCH GUIDE
+In the transaction save/submit service, look for:
+
+A loop over transaction lines assigning a single resolved rate to all legs
+The DR leg rate being overwritten after the CR leg rate is resolved
+A shared variable like settlementRate or resolvedRate set once for the whole transaction instead of per leg
+WAE being fetched using the wrong account number (e.g., always using the CR account)
+=================================================================
+FIX CHECKLIST
+
+Fix rate assignment — each leg resolves rate from its OWN account independently:
+  Liability DR → WAE from acc_bal for this account
+  Liability CR → mid_rate
+  Asset CR     → WAE from acc_bal for this account
+  Asset DR     → mid_rate
+
+Fix gain/loss leg generation:
+  Liability DR (settlement trigger):
+    If mid > WAE → DR FX Loss GL 240203002, LCY = (mid - WAE) × FCY
+    If mid < WAE → CR FX Gain GL 140203002, LCY = (WAE - mid) × FCY
+    If mid == WAE → no gain/loss row
+
+  Asset CR (settlement trigger):
+    If mid < WAE → DR FX Loss GL 240203002, LCY = (WAE - mid) × FCY
+    If mid > WAE → CR FX Gain GL 140203002, LCY = (mid - WAE) × FCY
+    If mid == WAE → no gain/loss row
+
+  Non-settlement sides (Asset DR, Liability CR) → skip, no gain/loss rows
+
+Fix account_no on gain/loss rows:
+  Always set account_no = NULL on the gain/loss leg
+  Always set gl_number = 240203002 (Loss) or 140203002 (Gain)
+
+Fix tran_id suffix on gain/loss rows:
+  For L→L or A→A: one gain/loss row → suffix -3
+  For L+A cross:   two gain/loss rows → suffixes -3 and -4
+
+Add LCY balance validation after all legs are built:
+  totalDrLcy = sum of LCY amounts for all DR legs
+  totalCrLcy = sum of LCY amounts for all CR legs
+  Assert totalDrLcy == totalCrLcy (throw or log error if not)
+=================================================================
+VERIFIED TEST RESULTS (post-fix)
+
+Scenario 1: L→L  (WAE=114.0, MID=115.5, FCY=10)
+  Leg-1 DR  100000008001  rate=114.0000 (WAE)  LCY=1140.00
+  Leg-2 CR  100000178001  rate=115.5000 (MID)  LCY=1155.00
+  Leg-3 DR  null GL=240203002  BDT  LCY=15.00  FX Loss
+  balanced=true  (1140+15=1155) ✓  3 legs ✓
+
+Scenario 2: A→A  (WAE=114.0, MID=115.5, FCY=10)
+  Leg-1 DR  922030200101  rate=115.5000 (MID)  LCY=1155.00
+  Leg-2 CR  922030200102  rate=114.0000 (WAE)  LCY=1140.00
+  Leg-3 CR  null GL=140203002  BDT  LCY=15.00  FX Gain
+  balanced=true  (1155=1140+15) ✓  3 legs ✓
+
+Scenario 3: L+A cross  (WAE=114.0, MID=115.5, FCY=10)
+  Leg-1 DR  100000008001  rate=114.0 (WAE)  LCY=1140
+  Leg-2 CR  922030200102  rate=114.0 (WAE)  LCY=1140
+  Leg-3 DR  null GL=240203002  BDT  LCY=15  FX Loss
+  Leg-4 CR  null GL=140203002  BDT  LCY=15  FX Gain
+  balanced=true ✓  4 legs ✓
+
+Scenario 4: A+L non-settlement  (MID=115.5, FCY=10)
+  Leg-1 DR  922030200101  rate=115.5 (MID)  LCY=1155
+  Leg-2 CR  100000178001  rate=115.5 (MID)  LCY=1155
+  balanced=true ✓  2 legs ✓  no gain/loss rows ✓
