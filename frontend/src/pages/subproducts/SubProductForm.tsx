@@ -65,8 +65,12 @@ const SubProductForm = () => {
 
   // Get products for dropdown
   const { data: productsData, isLoading: isLoadingProducts } = useQuery({
-    queryKey: ['products', { page: 0, size: 100 }], // Get all products for dropdown
+    // Use a stable query key to avoid accidental refetch loops
+    queryKey: ['products', 'dropdown', 0, 100],
     queryFn: () => getAllProducts(0, 100),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   // Get interest rates for dropdown

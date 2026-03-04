@@ -32,16 +32,22 @@ const InterestCapitalizationList = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Fetch products
+  // Fetch products — use same key as ProductList so the result is shared from cache
   const { data: productsData } = useQuery({
-    queryKey: ['products'],
+    queryKey: ['products', 'all'],
     queryFn: () => getAllProducts(0, 1000),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
-  // Fetch sub-products
+  // Fetch sub-products — use same key as SubProductList
   const { data: subProductsData } = useQuery({
-    queryKey: ['subproducts'],
+    queryKey: ['subproducts', 'all'],
     queryFn: () => getAllSubProducts(0, 1000),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   // Fetch customers for CIF search
@@ -54,9 +60,9 @@ const InterestCapitalizationList = () => {
   const { data: allAccountsData, isLoading, error, refetch } = useQuery({
     queryKey: ['accounts', 'all'],
     queryFn: () => getAllCustomerAccounts(0, 1000),
-    refetchOnMount: true,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
-    staleTime: 0,
+    refetchOnReconnect: false,
   });
 
   const products = productsData?.content || [];

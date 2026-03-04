@@ -9,6 +9,7 @@ import com.example.moneymarket.service.GLSetupService;
 import com.example.moneymarket.validation.SubProductValidator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -26,6 +27,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/subproducts")
 @RequiredArgsConstructor
+@Slf4j
 public class SubProductController {
 
     private final SubProductService subProductService;

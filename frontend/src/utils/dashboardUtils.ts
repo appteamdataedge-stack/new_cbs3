@@ -12,42 +12,42 @@ import { getAllCustomerAccounts } from '../api/customerAccountService';
  */
 export const useDashboardSummary = () => {
   // Customer count
-  const { 
+  const {
     data: customerData,
     isLoading: isCustomersLoading,
-    error: customersError 
+    error: customersError
   } = useQuery({
-    queryKey: ['customers', { page: 0, size: 1 }],
+    queryKey: ['customers', 'count'],
     queryFn: () => getAllCustomers(0, 1),
   });
 
   // Product count
-  const { 
+  const {
     data: productData,
-    isLoading: isProductsLoading, 
-    error: productsError 
+    isLoading: isProductsLoading,
+    error: productsError
   } = useQuery({
-    queryKey: ['products', { page: 0, size: 1 }],
+    queryKey: ['products', 'count'],
     queryFn: () => getAllProducts(0, 1),
   });
 
   // SubProduct count
-  const { 
+  const {
     data: subProductData,
     isLoading: isSubProductsLoading,
-    error: subProductsError 
+    error: subProductsError
   } = useQuery({
-    queryKey: ['subproducts', { page: 0, size: 1 }],
+    queryKey: ['subproducts', 'count'],
     queryFn: () => getAllSubProducts(0, 1),
   });
 
   // Account count
-  const { 
+  const {
     data: accountData,
     isLoading: isAccountsLoading,
-    error: accountsError 
+    error: accountsError
   } = useQuery({
-    queryKey: ['accounts', { page: 0, size: 1 }],
+    queryKey: ['accounts', 'count'],
     queryFn: () => getAllCustomerAccounts(0, 1),
   });
 

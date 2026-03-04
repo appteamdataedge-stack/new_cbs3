@@ -13,7 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Service for Batch Job 1: Account Balance Update (EOD)
@@ -81,6 +83,7 @@ public class AccountBalanceUpdateService {
     @Transactional(noRollbackFor = {DataIntegrityViolationException.class})
     public int executeAccountBalanceUpdate(LocalDate systemDate) {
         LocalDate processDate = systemDate != null ? systemDate : systemDateService.getSystemDate();
+        LocalDateTime lastUpdated = systemDateService.getSystemDateTime();
         log.info("Starting Batch Job 1: Account Balance Update for date: {}", processDate);
 
         // Step 1: Get all customer and office accounts
@@ -93,62 +96,66 @@ public class AccountBalanceUpdateService {
         }
 
         List<String> accountNumbers = new ArrayList<>();
-        customerAccounts.forEach(account -> accountNumbers.add(account.getAccountNo()));
-        officeAccounts.forEach(account -> accountNumbers.add(account.getAccountNo()));
+        Map<String, String> accountCcyMap = new HashMap<>();
+        customerAccounts.forEach(a -> {
+            if (a.getAccountNo() != null) {
+                accountNumbers.add(a.getAccountNo());
+                accountCcyMap.put(a.getAccountNo(), a.getAccountCcy() != null ? a.getAccountCcy() : "BDT");
+            }
+        });
+        officeAccounts.forEach(a -> {
+            if (a.getAccountNo() != null) {
+                accountNumbers.add(a.getAccountNo());
+                accountCcyMap.put(a.getAccountNo(), a.getAccountCcy() != null ? a.getAccountCcy() : "BDT");
+            }
+        });
 
         log.info("Found {} customer accounts and {} office accounts to process (total: {})",
                 customerAccounts.size(), officeAccounts.size(), accountNumbers.size());
+
+        // Step 2: Batch-fetch all data (one query each instead of per-account)
+        // Filter null accountNo (e.g. FX gain/loss GL legs) to avoid "element cannot be mapped to a null key"
+        List<TranTable> allTransactionsForDate = tranTableRepository.findByTranDateBetween(processDate, processDate);
+        Map<String, List<TranTable>> transactionsByAccount = allTransactionsForDate.stream()
+                .filter(t -> t.getAccountNo() != null)
+                .collect(Collectors.groupingBy(TranTable::getAccountNo));
+
+        List<AcctBal> allBalancesBefore = acctBalRepository.findByTranDateLessThanOrderByAccountNoAscTranDateDesc(processDate);
+        Map<String, BigDecimal> openingBalMap = buildOpeningBalanceMap(allBalancesBefore, processDate);
+
+        List<AcctBalLcy> allLcyBefore = acctBalLcyRepository.findByTranDateLessThanOrderByAccountNoAscTranDateDesc(processDate);
+        Map<String, BigDecimal> openingBalLcyMap = buildOpeningBalanceLcyMap(allLcyBefore, processDate);
+
+        List<AcctBal> existingAcctBalForDate = acctBalRepository.findByTranDate(processDate);
+        Map<String, AcctBal> existingAcctBalMap = existingAcctBalForDate.stream()
+                .filter(b -> b.getAccountNo() != null)
+                .collect(Collectors.toMap(AcctBal::getAccountNo, b -> b, (a, b) -> a));
+
+        List<AcctBalLcy> existingAcctBalLcyForDate = acctBalLcyRepository.findByTranDate(processDate);
+        Map<String, AcctBalLcy> existingAcctBalLcyMap = existingAcctBalLcyForDate.stream()
+                .filter(b -> b.getAccountNo() != null)
+                .collect(Collectors.toMap(AcctBalLcy::getAccountNo, b -> b, (a, b) -> a));
+
+        BatchContext ctx = new BatchContext(openingBalMap, openingBalLcyMap, existingAcctBalMap, existingAcctBalLcyMap,
+                transactionsByAccount, accountCcyMap, lastUpdated);
 
         int recordsProcessed = 0;
         List<String> errors = new ArrayList<>();
         List<String> failedAccounts = new ArrayList<>();
 
-        // Step 2: Process each account with retry logic
+        // Step 3: Process each account in same transaction (no per-account DB fetch)
         for (String accountNo : accountNumbers) {
-            boolean success = false;
-            int attempts = 0;
-            final int MAX_ATTEMPTS = 3;
-
-            while (!success && attempts < MAX_ATTEMPTS) {
-                attempts++;
-                try {
-                    // Clear entity manager to prevent session cache issues
-                    entityManager.flush();
-                    entityManager.clear();
-
-                    self.processAccountBalanceInNewTransaction(accountNo, processDate);
-                    recordsProcessed++;
-                    success = true;
-
-                    if (attempts > 1) {
-                        log.info("Account {} processed successfully on attempt {}", accountNo, attempts);
-                    }
-
-                } catch (DataIntegrityViolationException e) {
-                    log.warn("Duplicate key error for Account {} on attempt {}: {}", accountNo, attempts, e.getMessage());
-
-                    if (attempts < MAX_ATTEMPTS) {
-                        // Cleanup: Delete the duplicate record and retry
-                        try {
-                            self.cleanupDuplicateAccountBalance(accountNo, processDate);
-                            log.info("Cleaned up duplicate record for Account {}, retrying...", accountNo);
-                        } catch (Exception cleanupEx) {
-                            log.error("Failed to cleanup duplicate for Account {}: {}", accountNo, cleanupEx.getMessage());
-                        }
-                    } else {
-                        log.error("Failed to process Account {} after {} attempts due to duplicate key", accountNo, MAX_ATTEMPTS);
-                        errors.add(String.format("Account %s: Duplicate key after %d attempts", accountNo, MAX_ATTEMPTS));
-                        failedAccounts.add(accountNo);
-                    }
-
-                } catch (Exception e) {
-                    log.error("Error processing account balance for Account {} on attempt {}: {}", accountNo, attempts, e.getMessage());
-
-                    if (attempts >= MAX_ATTEMPTS) {
-                        errors.add(String.format("Account %s: %s", accountNo, e.getMessage()));
-                        failedAccounts.add(accountNo);
-                    }
-                }
+            if (accountNo == null) {
+                log.warn("Null accountNo found in account list — skipping");
+                continue;
+            }
+            try {
+                processAccountBalanceWithContext(accountNo, processDate, ctx);
+                recordsProcessed++;
+            } catch (Exception e) {
+                log.error("Error processing account balance for Account {}: {}", accountNo, e.getMessage());
+                errors.add(String.format("Account %s: %s", accountNo, e.getMessage()));
+                failedAccounts.add(accountNo);
             }
         }
 
@@ -162,6 +169,174 @@ public class AccountBalanceUpdateService {
 
         log.info("Batch Job 1 completed successfully. Accounts processed: {}, Failed: {}", recordsProcessed, failedAccounts.size());
         return recordsProcessed;
+    }
+
+    private Map<String, BigDecimal> buildOpeningBalanceMap(List<AcctBal> balancesBefore, LocalDate processDate) {
+        LocalDate previousDay = processDate.minusDays(1);
+        Map<String, BigDecimal> map = new HashMap<>();
+        Map<String, List<AcctBal>> byAccount = balancesBefore.stream()
+                .filter(b -> b.getAccountNo() != null)
+                .collect(Collectors.groupingBy(AcctBal::getAccountNo));
+        for (Map.Entry<String, List<AcctBal>> e : byAccount.entrySet()) {
+            List<AcctBal> list = e.getValue();
+            Optional<AcctBal> prevDay = list.stream().filter(b -> previousDay.equals(b.getTranDate())).findFirst();
+            if (prevDay.isPresent()) {
+                map.put(e.getKey(), prevDay.get().getClosingBal() != null ? prevDay.get().getClosingBal() : BigDecimal.ZERO);
+            } else if (!list.isEmpty()) {
+                map.put(e.getKey(), list.get(0).getClosingBal() != null ? list.get(0).getClosingBal() : BigDecimal.ZERO);
+            } else {
+                map.put(e.getKey(), BigDecimal.ZERO);
+            }
+        }
+        return map;
+    }
+
+    private Map<String, BigDecimal> buildOpeningBalanceLcyMap(List<AcctBalLcy> balancesBefore, LocalDate processDate) {
+        LocalDate previousDay = processDate.minusDays(1);
+        Map<String, BigDecimal> map = new HashMap<>();
+        Map<String, List<AcctBalLcy>> byAccount = balancesBefore.stream()
+                .filter(b -> b.getAccountNo() != null)
+                .collect(Collectors.groupingBy(AcctBalLcy::getAccountNo));
+        for (Map.Entry<String, List<AcctBalLcy>> e : byAccount.entrySet()) {
+            List<AcctBalLcy> list = e.getValue();
+            Optional<AcctBalLcy> prevDay = list.stream().filter(b -> previousDay.equals(b.getTranDate())).findFirst();
+            if (prevDay.isPresent()) {
+                map.put(e.getKey(), prevDay.get().getClosingBalLcy() != null ? prevDay.get().getClosingBalLcy() : BigDecimal.ZERO);
+            } else if (!list.isEmpty()) {
+                map.put(e.getKey(), list.get(0).getClosingBalLcy() != null ? list.get(0).getClosingBalLcy() : BigDecimal.ZERO);
+            } else {
+                map.put(e.getKey(), BigDecimal.ZERO);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Process one account using pre-fetched batch context (no per-account DB reads for balance/transactions).
+     */
+    private void processAccountBalanceWithContext(String accountNo, LocalDate systemDate, BatchContext ctx) {
+        if (accountNo == null) {
+            log.warn("Skipping account with null accountNo during batch processing");
+            return;
+        }
+        String accountCcy = ctx.accountCcyMap.getOrDefault(accountNo, "BDT");
+        BigDecimal openingBal = ctx.openingBalMap.getOrDefault(accountNo, BigDecimal.ZERO);
+        BigDecimal openingBalLcy = "BDT".equals(accountCcy)
+                ? openingBal
+                : ctx.openingBalLcyMap.getOrDefault(accountNo, BigDecimal.ZERO);
+
+        List<TranTable> transactions = ctx.transactionsByAccount.getOrDefault(accountNo, Collections.emptyList());
+        DRCRSummation summation = calculateDRCRSummationFromList(transactions);
+        BigDecimal closingBal = openingBal.add(summation.crSummation).subtract(summation.drSummation);
+        BigDecimal closingBalLcy = openingBalLcy.add(summation.crSummationLcy).subtract(summation.drSummationLcy);
+
+        saveOrUpdateAcctBalWithContext(accountNo, systemDate, accountCcy, openingBal, summation.drSummation,
+                summation.crSummation, closingBal, ctx.existingAcctBalMap.get(accountNo), ctx.lastUpdated);
+        saveOrUpdateAcctBalLcyWithContext(accountNo, systemDate, openingBalLcy, summation.drSummationLcy,
+                summation.crSummationLcy, closingBalLcy, ctx.existingAcctBalLcyMap.get(accountNo), ctx.lastUpdated);
+    }
+
+    private DRCRSummation calculateDRCRSummationFromList(List<TranTable> transactions) {
+        BigDecimal drSummation = BigDecimal.ZERO;
+        BigDecimal crSummation = BigDecimal.ZERO;
+        BigDecimal drSummationLcy = BigDecimal.ZERO;
+        BigDecimal crSummationLcy = BigDecimal.ZERO;
+        for (TranTable tran : transactions) {
+            BigDecimal fcyAmt = tran.getFcyAmt() != null ? tran.getFcyAmt() : BigDecimal.ZERO;
+            BigDecimal debitAmt = tran.getDebitAmount() != null ? tran.getDebitAmount() : BigDecimal.ZERO;
+            BigDecimal creditAmt = tran.getCreditAmount() != null ? tran.getCreditAmount() : BigDecimal.ZERO;
+            if (tran.getDrCrFlag() == TranTable.DrCrFlag.D) {
+                drSummation = drSummation.add(fcyAmt);
+                drSummationLcy = drSummationLcy.add(debitAmt);
+            } else if (tran.getDrCrFlag() == TranTable.DrCrFlag.C) {
+                crSummation = crSummation.add(fcyAmt);
+                crSummationLcy = crSummationLcy.add(creditAmt);
+            }
+        }
+        return new DRCRSummation(drSummation, crSummation, drSummationLcy, crSummationLcy);
+    }
+
+    private void saveOrUpdateAcctBalWithContext(String accountNo, LocalDate tranDate, String accountCcy,
+                                                 BigDecimal openingBal, BigDecimal drSummation,
+                                                 BigDecimal crSummation, BigDecimal closingBal,
+                                                 AcctBal existing, LocalDateTime lastUpdated) {
+        AcctBal acctBal;
+        if (existing != null) {
+            acctBal = existing;
+            acctBal.setAccountCcy(accountCcy);
+            acctBal.setOpeningBal(openingBal);
+            acctBal.setDrSummation(drSummation);
+            acctBal.setCrSummation(crSummation);
+            acctBal.setClosingBal(closingBal);
+            acctBal.setCurrentBalance(closingBal);
+            acctBal.setAvailableBalance(closingBal);
+            acctBal.setLastUpdated(lastUpdated);
+        } else {
+            acctBal = AcctBal.builder()
+                    .tranDate(tranDate)
+                    .accountNo(accountNo)
+                    .accountCcy(accountCcy)
+                    .openingBal(openingBal)
+                    .drSummation(drSummation)
+                    .crSummation(crSummation)
+                    .closingBal(closingBal)
+                    .currentBalance(closingBal)
+                    .availableBalance(closingBal)
+                    .lastUpdated(lastUpdated)
+                    .build();
+        }
+        acctBalRepository.save(acctBal);
+    }
+
+    private void saveOrUpdateAcctBalLcyWithContext(String accountNo, LocalDate tranDate,
+                                                    BigDecimal openingBalLcy, BigDecimal drSummationLcy,
+                                                    BigDecimal crSummationLcy, BigDecimal closingBalLcy,
+                                                    AcctBalLcy existing, LocalDateTime lastUpdated) {
+        AcctBalLcy acctBalLcy;
+        if (existing != null) {
+            acctBalLcy = existing;
+            acctBalLcy.setOpeningBalLcy(openingBalLcy);
+            acctBalLcy.setDrSummationLcy(drSummationLcy);
+            acctBalLcy.setCrSummationLcy(crSummationLcy);
+            acctBalLcy.setClosingBalLcy(closingBalLcy);
+            acctBalLcy.setAvailableBalanceLcy(closingBalLcy);
+            acctBalLcy.setLastUpdated(lastUpdated);
+        } else {
+            acctBalLcy = AcctBalLcy.builder()
+                    .tranDate(tranDate)
+                    .accountNo(accountNo)
+                    .openingBalLcy(openingBalLcy)
+                    .drSummationLcy(drSummationLcy)
+                    .crSummationLcy(crSummationLcy)
+                    .closingBalLcy(closingBalLcy)
+                    .availableBalanceLcy(closingBalLcy)
+                    .lastUpdated(lastUpdated)
+                    .build();
+        }
+        acctBalLcyRepository.save(acctBalLcy);
+    }
+
+    private static class BatchContext {
+        final Map<String, BigDecimal> openingBalMap;
+        final Map<String, BigDecimal> openingBalLcyMap;
+        final Map<String, AcctBal> existingAcctBalMap;
+        final Map<String, AcctBalLcy> existingAcctBalLcyMap;
+        final Map<String, List<TranTable>> transactionsByAccount;
+        final Map<String, String> accountCcyMap;
+        final LocalDateTime lastUpdated;
+
+        BatchContext(Map<String, BigDecimal> openingBalMap, Map<String, BigDecimal> openingBalLcyMap,
+                     Map<String, AcctBal> existingAcctBalMap, Map<String, AcctBalLcy> existingAcctBalLcyMap,
+                     Map<String, List<TranTable>> transactionsByAccount, Map<String, String> accountCcyMap,
+                     LocalDateTime lastUpdated) {
+            this.openingBalMap = openingBalMap;
+            this.openingBalLcyMap = openingBalLcyMap;
+            this.existingAcctBalMap = existingAcctBalMap;
+            this.existingAcctBalLcyMap = existingAcctBalLcyMap;
+            this.transactionsByAccount = transactionsByAccount;
+            this.accountCcyMap = accountCcyMap;
+            this.lastUpdated = lastUpdated;
+        }
     }
 
     /**

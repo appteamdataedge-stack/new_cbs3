@@ -10,6 +10,8 @@ import com.example.moneymarket.exception.ResourceNotFoundException;
 import com.example.moneymarket.repository.ProdMasterRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ public class ProductService {
      * @return The created product response
      */
     @Transactional
+    @CacheEvict(value = "products", allEntries = true)
     public ProductResponseDTO createProduct(ProductRequestDTO productRequestDTO) {
         // Check if product code is unique
         if (prodMasterRepository.existsByProductCode(productRequestDTO.getProductCode())) {
@@ -78,6 +81,7 @@ public class ProductService {
      * @return The updated product response
      */
     @Transactional
+    @CacheEvict(value = "products", allEntries = true)
     public ProductResponseDTO updateProduct(Integer productId, ProductRequestDTO productRequestDTO) {
         // Find the product
         ProdMaster product = prodMasterRepository.findById(productId)
@@ -121,6 +125,7 @@ public class ProductService {
      * @param productId The product ID
      * @return The product response
      */
+    @Transactional(readOnly = true)
     public ProductResponseDTO getProduct(Integer productId) {
         // Find the product
         ProdMaster product = prodMasterRepository.findById(productId)
@@ -136,6 +141,8 @@ public class ProductService {
      * @param pageable The pagination information
      * @return Page of product responses
      */
+    @Transactional(readOnly = true)
+    @Cacheable(value = "products", key = "#pageable.pageNumber + '_' + #pageable.pageSize")
     public Page<ProductResponseDTO> getAllProducts(Pageable pageable) {
         // Get the products page
         Page<ProdMaster> products = prodMasterRepository.findAll(pageable);
@@ -152,6 +159,7 @@ public class ProductService {
      * @return The verified product response
      */
     @Transactional
+    @CacheEvict(value = "products", allEntries = true)
     public ProductResponseDTO verifyProduct(Integer productId, CustomerVerificationDTO verificationDTO) {
         // Find the product
         ProdMaster product = prodMasterRepository.findById(productId)
@@ -255,6 +263,7 @@ public class ProductService {
      * @param pageable The pagination information
      * @return Page of customer products
      */
+    @Transactional(readOnly = true)
     public Page<ProductResponseDTO> getCustomerProducts(Pageable pageable) {
         // Get all products
         Page<ProdMaster> products = prodMasterRepository.findAll(pageable);
@@ -279,6 +288,7 @@ public class ProductService {
      * @param pageable The pagination information
      * @return Page of filtered products
      */
+    @Transactional(readOnly = true)
     public Page<ProductResponseDTO> getProductsByAccountType(String accountType, Pageable pageable) {
         // Get all products
         Page<ProdMaster> products = prodMasterRepository.findAll(pageable);

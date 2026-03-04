@@ -30,6 +30,10 @@ public interface AcctBalRepository extends JpaRepository<AcctBal, AcctBalId> {
     
     @Query("SELECT ab FROM AcctBal ab WHERE ab.tranDate = ?1")
     List<AcctBal> findByTranDate(LocalDate tranDate);
+
+    /** All balances with tranDate strictly before date (for batch opening-balance lookup). */
+    @Query("SELECT ab FROM AcctBal ab WHERE ab.tranDate < ?1 ORDER BY ab.accountNo, ab.tranDate DESC")
+    List<AcctBal> findByTranDateLessThanOrderByAccountNoAscTranDateDesc(LocalDate date);
     
     @Query("SELECT ab FROM AcctBal ab WHERE ab.tranDate = ?1 AND ab.accountNo = ?2")
     Optional<AcctBal> findByTranDateAndAccountAccountNo(LocalDate tranDate, String accountNo);

@@ -63,14 +63,20 @@ const AccountForm = () => {
 
   // Get customers for dropdown
   const { data: customersData, isLoading: isLoadingCustomers } = useQuery({
-    queryKey: ['customers', { page: 0, size: 100 }], // Get all customers for dropdown
+    queryKey: ['customers', 'dropdown', 0, 100], // stable key
     queryFn: () => getAllCustomers(0, 100),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   // Get subproducts for dropdown
   const { data: subProductsData, isLoading: isLoadingSubProducts } = useQuery({
-    queryKey: ['subproducts', { page: 0, size: 100 }],
+    queryKey: ['subproducts', 'dropdown', 0, 100], // stable key
     queryFn: () => getAllSubProducts(0, 100),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   // Get account data if editing

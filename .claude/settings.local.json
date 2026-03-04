@@ -37,7 +37,8 @@
       "Bash(powershell.exe -Command \"Start-Service MySQL80\" 2>&1 && sleep 8 && MYSQL_PWD='asif@yasir123' mysql -uroot moneymarketdb -e \"SELECT 1;\" 2>&1)",
       "Bash(curl -s -X POST \"http://localhost:8082/api/transactions/T20250913000040120/post\" 2>&1 | python -c \"\nimport sys, json\nd = json.load\\(sys.stdin\\)\nprint\\('Status:', d.get\\('status'\\)\\)\nfor l in d.get\\('lines', []\\):\n    print\\(f\\\\\"  Leg {l['tranId'][-2:]}: {l['drCrFlag']} {l.get\\('accountNo','NULL'\\)[:12] if l.get\\('accountNo'\\) else 'NULL'} {l['tranCcy']} rate={l['exchangeRate']} LCY={l['lcyAmt']}\\\\\"\\)\n\" 2>&1)",
       "Bash(mvn compile:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

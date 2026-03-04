@@ -80,6 +80,12 @@ public class EODJobManagementService {
 
         log.info("Executing EOD Job {}: {} for user: {}", jobNumber, jobName, userId);
 
+        // Idempotency: skip if this job is already running (prevents duplicate execution on double-click)
+        if (eodLogTableRepository.existsByEodDateAndJobNameAndStatus(systemDate, jobName, EODLogTable.EODStatus.Running)) {
+            log.warn("Job {} already running for date {} — skipping duplicate trigger", jobName, systemDate);
+            return EODJobResult.failure(jobNumber, jobName, "Job is already running for this date. Please wait for it to complete.");
+        }
+
         // Check if job has already been executed successfully today
         Optional<EODLogTable> existingExecution = eodLogTableRepository
                 .findTopByEodDateAndJobNameOrderByStartTimestampDesc(systemDate, jobName);
@@ -120,8 +126,9 @@ public class EODJobManagementService {
             return EODJobResult.failure(5, jobName, message);
         }
 
-        // Log job start in a separate transaction (use self to invoke proxy)
-        EODLogTable logEntry = self.logJobStartInNewTransaction(systemDate, jobName, userId);
+        // Use cached timestamps for this job run to avoid repeated System_Date DB queries
+        LocalDateTime jobStartTime = systemDateService.getSystemDateTime();
+        EODLogTable logEntry = self.logJobStartInNewTransaction(systemDate, jobName, userId, jobStartTime);
 
         try {
             // Execute the specific job
@@ -298,15 +305,15 @@ public class EODJobManagementService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public EODLogTable logJobStartInNewTransaction(LocalDate eodDate, String jobName, String userId) {
+    public EODLogTable logJobStartInNewTransaction(LocalDate eodDate, String jobName, String userId, LocalDateTime startTimestamp) {
         EODLogTable logEntry = EODLogTable.builder()
                 .eodDate(eodDate)
                 .jobName(jobName)
-                .startTimestamp(systemDateService.getSystemDateTime())
+                .startTimestamp(startTimestamp)
                 .systemDate(eodDate)
                 .userId(userId)
                 .status(EODLogTable.EODStatus.Running)
-                .createdTimestamp(systemDateService.getSystemDateTime())
+                .createdTimestamp(startTimestamp)
                 .build();
 
         return eodLogTableRepository.save(logEntry);
@@ -314,27 +321,20 @@ public class EODJobManagementService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logJobSuccessInNewTransaction(EODLogTable logEntry, int recordsProcessed) {
-        // Fetch the entity again in this new transaction to avoid detached entity issues
-        EODLogTable managedEntry = eodLogTableRepository.findById(logEntry.getEodLogId())
-                .orElseThrow(() -> new RuntimeException("Log entry not found"));
-
-        managedEntry.setEndTimestamp(systemDateService.getSystemDateTime());
-        managedEntry.setRecordsProcessed(recordsProcessed);
-        managedEntry.setStatus(EODLogTable.EODStatus.Success);
-        eodLogTableRepository.save(managedEntry);
+        LocalDateTime endTs = systemDateService.getSystemDateTime();
+        int updated = eodLogTableRepository.updateLogToSuccess(logEntry.getEodLogId(), endTs, recordsProcessed);
+        if (updated == 0) {
+            log.warn("EOD log update to Success matched no row for id: {}", logEntry.getEodLogId());
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logJobFailureInNewTransaction(EODLogTable logEntry, String errorMessage, String failedAtStep) {
-        // Fetch the entity again in this new transaction to avoid detached entity issues
-        EODLogTable managedEntry = eodLogTableRepository.findById(logEntry.getEodLogId())
-                .orElseThrow(() -> new RuntimeException("Log entry not found"));
-
-        managedEntry.setEndTimestamp(systemDateService.getSystemDateTime());
-        managedEntry.setStatus(EODLogTable.EODStatus.Failed);
-        managedEntry.setErrorMessage(errorMessage);
-        managedEntry.setFailedAtStep(failedAtStep);
-        eodLogTableRepository.save(managedEntry);
+        LocalDateTime endTs = systemDateService.getSystemDateTime();
+        int updated = eodLogTableRepository.updateLogToFailure(logEntry.getEodLogId(), endTs, errorMessage, failedAtStep);
+        if (updated == 0) {
+            log.warn("EOD log update to Failed matched no row for id: {}", logEntry.getEodLogId());
+        }
     }
 
     /**

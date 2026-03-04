@@ -61,12 +61,16 @@ apiClient.interceptors.request.use(
       }
     }
     
-    // Add timestamp to prevent caching
-    const timestamp = new Date().getTime();
-    if (config.params) {
-      config.params._t = timestamp;
-    } else {
-      config.params = { _t: timestamp };
+    // Add timestamp to prevent caching ONLY for non-GET requests or critical real-time data
+    // Do NOT add timestamp for GET requests - let React Query handle caching
+    // This prevents continuous polling of static reference data (products, subproducts, customers)
+    if (config.method !== 'get' && config.method !== 'GET') {
+      const timestamp = new Date().getTime();
+      if (config.params) {
+        config.params._t = timestamp;
+      } else {
+        config.params = { _t: timestamp };
+      }
     }
     
     return config;
@@ -122,34 +126,14 @@ apiClient.interceptors.response.use(
 );
 
 /**
- * Generic API request function with typed responses and retry mechanism
+ * Generic API request function with typed responses.
+ * Retries are handled by React Query — do NOT add a retry loop here,
+ * as that would combine multiplicatively with React Query retries and
+ * create a synchronized retry storm (all queries firing every 1 s).
  */
-export const apiRequest = async <T>(
-  config: AxiosRequestConfig, 
-  retries = 2, 
-  retryDelay = 1000
-): Promise<T> => {
-  try {
-    const response: AxiosResponse<T> = await apiClient(config);
-    return response.data;
-  } catch (error: unknown) {
-    // Only retry on network errors or 5xx server errors
-    const axiosError = error as AxiosError;
-    const isNetworkError = !axiosError.response;
-    const isServerError = axiosError.response && axiosError.response.status >= 500;
-    
-    if ((isNetworkError || isServerError) && retries > 0) {
-      console.log(`Retrying API request (${retries} retries left)...`);
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-      
-      // Retry with one less retry attempt and increased delay
-      return apiRequest<T>(config, retries - 1, retryDelay * 1.5);
-    }
-    
-    throw error;
-  }
+export const apiRequest = async <T>(config: AxiosRequestConfig): Promise<T> => {
+  const response: AxiosResponse<T> = await apiClient(config);
+  return response.data;
 };
 
 export default apiClient;

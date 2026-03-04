@@ -75,6 +75,16 @@
             <version>2.2.0</version>
         </dependency>
         
+        <!-- Spring Cache + Caffeine (prevents DB hammering on repeated product/subproduct reads) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Apache POI for Excel generation -->
         <dependency>
             <groupId>org.apache.poi</groupId>

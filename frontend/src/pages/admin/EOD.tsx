@@ -64,11 +64,28 @@ const EOD = () => {
     open: boolean;
     data: EODVerificationStatus | null;
   }>({ open: false, data: null });
+  // Track job IDs we just started (disable button + show spinner until backend returns or status is terminal)
+  const [runningJobIds, setRunningJobIds] = useState<Set<number>>(new Set());
 
   // Fetch system date and job statuses from backend when component mounts
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Poll job status every 3s while any step is running; stop when all are terminal (completed/failed/skipped)
+  const isAnyStepRunning = jobStatuses.some((j) => j.status === 'running');
+  useEffect(() => {
+    if (!isAnyStepRunning) return;
+    const interval = setInterval(async () => {
+      try {
+        const statuses = await getEODJobStatuses();
+        setJobStatuses(statuses);
+      } catch (e) {
+        console.error('EOD status poll failed:', e);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isAnyStepRunning]);
 
   const fetchData = async () => {
     try {
@@ -178,12 +195,15 @@ const EOD = () => {
 
   // Execute batch job with actual logic
   const runJob = async (jobId: number) => {
+    // Disable button immediately on first click (prevent double-click duplicate execution)
+    setRunningJobIds((prev) => new Set(prev).add(jobId));
     try {
       // Before EOD Step 1 (Account Balance Update), block only if there are unverified transactions
       if (jobId === 1) {
         const verification = await getEODVerificationStatus();
         if (!verification.canProceedWithEOD) {
           setVerificationBlockDialog({ open: true, data: verification });
+          setRunningJobIds((prev) => { const n = new Set(prev); n.delete(jobId); return n; });
           return;
         }
       }
@@ -219,7 +239,6 @@ const EOD = () => {
       } else {
         toast.error(`${result.jobName} failed: ${result.message}`);
       }
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const job = batchJobs.find(j => j.id === jobId);
@@ -227,6 +246,13 @@ const EOD = () => {
         autoClose: 8000
       });
       console.error(`Job ${jobId} error:`, error);
+    } finally {
+      // Re-enable button only after request completes (success or failed)
+      setRunningJobIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
     }
   };
 
@@ -347,7 +373,7 @@ const EOD = () => {
       );
     }
 
-    if (jobStatus.status === 'running') {
+    if (jobStatus.status === 'running' || runningJobIds.has(jobId)) {
       return (
         <Button
           variant="contained"

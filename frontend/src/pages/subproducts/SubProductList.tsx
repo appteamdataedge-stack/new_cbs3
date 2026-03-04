@@ -25,9 +25,7 @@ const SubProductList = () => {
   // Fetch all subproducts at once
   const { data: allSubProducts, isLoading, error, refetch } = useQuery({
     queryKey: ['subproducts', 'all'],
-    queryFn: () => getAllSubProducts(0, 1000), // Get a large number to effectively get all
-    retry: 3,
-    retryDelay: 1000
+    queryFn: () => getAllSubProducts(0, 1000),
   });
   
   // Filter subproducts based on search term

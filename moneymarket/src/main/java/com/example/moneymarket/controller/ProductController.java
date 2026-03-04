@@ -9,6 +9,7 @@ import com.example.moneymarket.service.GLSetupService;
 import com.example.moneymarket.validation.ProductValidator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/products")
 @RequiredArgsConstructor
+@Slf4j
 public class ProductController {
 
     private final ProductService productService;
@@ -90,9 +92,15 @@ public class ProductController {
      * @return The product
      */
     @GetMapping("/{id}")
-    public ResponseEntity<ProductResponseDTO> getProduct(@PathVariable Integer id) {
-        ProductResponseDTO product = productService.getProduct(id);
-        return ResponseEntity.ok(product);
+    public ResponseEntity<?> getProduct(@PathVariable Integer id) {
+        try {
+            ProductResponseDTO product = productService.getProduct(id);
+            return ResponseEntity.ok(product);
+        } catch (Exception e) {
+            log.error("Error fetching product {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error fetching product: " + e.getMessage());
+        }
     }
 
     /**
@@ -102,9 +110,15 @@ public class ProductController {
      * @return Page of products
      */
     @GetMapping
-    public ResponseEntity<Page<ProductResponseDTO>> getAllProducts(Pageable pageable) {
-        Page<ProductResponseDTO> products = productService.getAllProducts(pageable);
-        return ResponseEntity.ok(products);
+    public ResponseEntity<?> getAllProducts(Pageable pageable) {
+        try {
+            Page<ProductResponseDTO> products = productService.getAllProducts(pageable);
+            return ResponseEntity.ok(products);
+        } catch (Exception e) {
+            log.error("Error fetching products: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error fetching products: " + e.getMessage());
+        }
     }
 
     /**
@@ -113,9 +127,15 @@ public class ProductController {
      * @return List of Layer 3 GL entries
      */
     @GetMapping("/gl-options")
-    public ResponseEntity<List<GLSetupResponseDTO>> getProductGLOptions() {
-        List<GLSetupResponseDTO> glOptions = glSetupService.getGLSetupsByLayerId(3);
-        return ResponseEntity.ok(glOptions);
+    public ResponseEntity<?> getProductGLOptions() {
+        try {
+            List<GLSetupResponseDTO> glOptions = glSetupService.getGLSetupsByLayerId(3);
+            return ResponseEntity.ok(glOptions);
+        } catch (Exception e) {
+            log.error("Error fetching product GL options: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error fetching GL options: " + e.getMessage());
+        }
     }
 
     /**

@@ -61,8 +61,12 @@ const OfficeAccountForm = () => {
 
   // Get subproducts for dropdown
   const { data: subProductsData, isLoading: isLoadingSubProducts } = useQuery({
-    queryKey: ['subproducts', { page: 0, size: 100 }],
+    // Use a stable query key to avoid accidental refetch loops
+    queryKey: ['subproducts', 'dropdown', 0, 100],
     queryFn: () => getAllSubProducts(0, 100),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   // Get account data if editing

@@ -277,6 +277,7 @@ com\example\moneymarket\service\GLValidationService.class
 com\example\moneymarket\controller\EODController$InterestAccrualResponse.class
 com\example\moneymarket\entity\InterestRateMaster$InterestRateMasterBuilder.class
 com\example\moneymarket\repository\GLBalanceRepository.class
+com\example\moneymarket\service\AccountBalanceUpdateService$BatchContext.class
 com\example\moneymarket\entity\SubProdMaster.class
 com\example\moneymarket\dto\ProductRequestDTO.class
 com\example\moneymarket\entity\ProdMaster.class

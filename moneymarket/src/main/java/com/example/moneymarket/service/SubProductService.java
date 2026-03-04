@@ -14,6 +14,8 @@ import com.example.moneymarket.repository.InterestRateMasterRepository;
 import com.example.moneymarket.repository.SubProdMasterRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -49,6 +51,7 @@ public class SubProductService {
      * @return The created sub-product response
      */
     @Transactional
+    @CacheEvict(value = "subproducts", allEntries = true)
     public SubProductResponseDTO createSubProduct(SubProductRequestDTO subProductRequestDTO) {
         log.info("=== CREATE SUB-PRODUCT SERVICE CALL ===");
         log.info("Received DTO: {}", subProductRequestDTO);
@@ -140,6 +143,7 @@ public class SubProductService {
      * @return The updated sub-product response
      */
     @Transactional
+    @CacheEvict(value = "subproducts", allEntries = true)
     public SubProductResponseDTO updateSubProduct(Integer subProductId, SubProductRequestDTO subProductRequestDTO) {
         // Find the sub-product
         SubProdMaster subProduct = subProdMasterRepository.findById(subProductId)
@@ -280,6 +284,7 @@ public class SubProductService {
      * @param subProductId The sub-product ID
      * @return The sub-product response
      */
+    @Transactional(readOnly = true)
     public SubProductResponseDTO getSubProduct(Integer subProductId) {
         // Find the sub-product
         SubProdMaster subProduct = subProdMasterRepository.findById(subProductId)
@@ -295,6 +300,8 @@ public class SubProductService {
      * @param pageable The pagination information
      * @return Page of sub-product responses
      */
+    @Transactional(readOnly = true)
+    @Cacheable(value = "subproducts", key = "#pageable.pageNumber + '_' + #pageable.pageSize")
     public Page<SubProductResponseDTO> getAllSubProducts(Pageable pageable) {
         // Get the sub-products page
         Page<SubProdMaster> subProducts = subProdMasterRepository.findAll(pageable);
@@ -311,6 +318,7 @@ public class SubProductService {
      * @return The verified sub-product response
      */
     @Transactional
+    @CacheEvict(value = "subproducts", allEntries = true)
     public SubProductResponseDTO verifySubProduct(Integer subProductId, CustomerVerificationDTO verificationDTO) {
         // Find the sub-product
         SubProdMaster subProduct = subProdMasterRepository.findById(subProductId)
@@ -400,6 +408,7 @@ public class SubProductService {
      * @param pageable The pagination information
      * @return Page of customer sub-products
      */
+    @Transactional(readOnly = true)
     public Page<SubProductResponseDTO> getCustomerSubProducts(Pageable pageable) {
         // Get all sub-products
         Page<SubProdMaster> subProducts = subProdMasterRepository.findAll(pageable);
@@ -423,6 +432,7 @@ public class SubProductService {
      * @param pageable The pagination information
      * @return Page of filtered sub-products
      */
+    @Transactional(readOnly = true)
     public Page<SubProductResponseDTO> getSubProductsByAccountType(String accountType, Pageable pageable) {
         // Get all sub-products
         Page<SubProdMaster> subProducts = subProdMasterRepository.findAll(pageable);
@@ -451,6 +461,7 @@ public class SubProductService {
      * @param pageable The pagination information
      * @return Page of filtered sub-products
      */
+    @Transactional(readOnly = true)
     public Page<SubProductResponseDTO> getSubProductsByProductAndType(Integer productId, String accountType, Pageable pageable) {
         // Get sub-products by product ID (returns List, not Page)
         List<SubProdMaster> subProductsList = subProdMasterRepository.findByProductProductId(productId);
