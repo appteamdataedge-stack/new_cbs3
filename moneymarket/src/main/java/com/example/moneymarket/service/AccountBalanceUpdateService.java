@@ -215,14 +215,15 @@ public class AccountBalanceUpdateService {
         // Step a: Get Opening Balance from previous day's Closing Balance (original currency)
         BigDecimal openingBal = getOpeningBalance(accountNo, systemDate);
 
-        // Step a (LCY): Derive LCY opening from previous day's acct_bal closing balance
-        // If currency = BDT, LCY opening equals closing balance
-        // If currency = USD/other FCY, convert closing balance to BDT using mid rate
+        // Step a (LCY): Carry forward previous day's LCY closing balance (historical cost basis).
+        // For BDT accounts: LCY opening equals FCY opening (same currency).
+        // For FCY accounts: use the previous day's actual closingBalLcy — NOT MID-converted —
+        // so that WAE = closingBalLcy / closingBal reflects true acquisition cost, not current MID rate.
         BigDecimal openingBalLcy;
         if ("BDT".equals(accountCcy)) {
             openingBalLcy = openingBal;
         } else {
-            openingBalLcy = exchangeRateService.convertToLCY(openingBal, accountCcy, systemDate);
+            openingBalLcy = getOpeningBalanceLcy(accountNo, systemDate);
         }
 
         /*

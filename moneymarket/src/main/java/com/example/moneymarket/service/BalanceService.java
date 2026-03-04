@@ -178,6 +178,10 @@ public class BalanceService {
                         .orElseThrow(() -> new com.example.moneymarket.exception.ResourceNotFoundException(
                                 "Account Balance", "Account Number", accountNo)));
 
+        // Fetch matching AcctBalLcy record for WAE calculation (same tranDate as AcctBal)
+        Optional<AcctBalLcy> currentDayLcyBalance = acctBalLcyRepository.findByAccountNoAndTranDate(
+                accountNo, currentDayBalance.getTranDate());
+
         // Use shared 3-tier fallback logic to get previous day's opening balance
         BigDecimal previousDayOpeningBalance = accountBalanceUpdateService.getPreviousDayClosingBalance(accountNo, systemDate);
 
@@ -322,9 +326,27 @@ public class BalanceService {
 
         BigDecimal currentBalanceLcy = computedBalanceLcy;
 
-        // Weighted Average Exchange Rate (WAE) for FCY accounts
-        // REQUIREMENT FORMULA: computedBalanceLcy / computedBalanceFCY (avoid zero division; fallback to mid if FCY zero)
-        BigDecimal wae = calculateWae(accountCcy, computedBalanceLcy, computedBalance, systemDate);
+        // WAE from acc_bal closing position (EOD-confirmed data, not real-time tran_table queries)
+        // Formula: WAE = (Opening_Bal_lcy + CR_Summation_lcy - DR_Summation_lcy)
+        //              / (Opening_Bal     + CR_Summation     - DR_Summation    )
+        // Uses the acc_bal record for the same date as the AcctBal record (yesterday's EOD if today's EOD not yet run)
+        BigDecimal waeFcyBase = null;
+        BigDecimal waeLcyBase = null;
+        if (!"BDT".equalsIgnoreCase(accountCcy)) {
+            BigDecimal ob  = currentDayBalance.getOpeningBal()   != null ? currentDayBalance.getOpeningBal()   : BigDecimal.ZERO;
+            BigDecimal dr  = currentDayBalance.getDrSummation()  != null ? currentDayBalance.getDrSummation()  : BigDecimal.ZERO;
+            BigDecimal cr  = currentDayBalance.getCrSummation()  != null ? currentDayBalance.getCrSummation()  : BigDecimal.ZERO;
+            waeFcyBase = ob.add(cr).subtract(dr);
+
+            if (currentDayLcyBalance.isPresent()) {
+                AcctBalLcy lcy = currentDayLcyBalance.get();
+                BigDecimal obLcy = lcy.getOpeningBalLcy()    != null ? lcy.getOpeningBalLcy()    : BigDecimal.ZERO;
+                BigDecimal drLcy = lcy.getDrSummationLcy()   != null ? lcy.getDrSummationLcy()   : BigDecimal.ZERO;
+                BigDecimal crLcy = lcy.getCrSummationLcy()   != null ? lcy.getCrSummationLcy()   : BigDecimal.ZERO;
+                waeLcyBase = obLcy.add(crLcy).subtract(drLcy);
+            }
+        }
+        BigDecimal wae = calculateWae(accountCcy, waeLcyBase, waeFcyBase, systemDate);
 
         return com.example.moneymarket.dto.AccountBalanceDTO.builder()
                 .accountNo(accountNo)
