@@ -618,8 +618,40 @@ const TransactionForm = () => {
           (l.tranCcy || '').trim() === (data.lines[0].tranCcy || '').trim()
       );
 
-    // A settlement line is any FCY line whose rate type is WAE ('wae' in rateTypes map)
-    const hasSettlementLine = data.lines.some((_, index) => rateTypes.get(index) === 'wae');
+    // A settlement line is one whose account type + dr/cr makes it a settlement trigger:
+    //   Liability DR → WAE (settlement trigger)
+    //   Asset CR     → WAE (settlement trigger)
+    //   Asset DR     → Mid Rate (non-settlement, never needs WAE)
+    //   Liability CR → Mid Rate (non-settlement, never needs WAE)
+    const hasSettlementLine = data.lines.some((_, index) => {
+      const isAsset = assetAccounts.get(`${index}`) ?? false;
+      const isLiability = !isAsset;
+      const line = data.lines[index];
+      return (isLiability && line.drCrFlag === DrCrFlag.D) || (isAsset && line.drCrFlag === DrCrFlag.C);
+    });
+
+    // Guard: WAE must be available for settlement trigger legs only
+    if (hasSettlementLine) {
+      const missingWaeLines: number[] = [];
+      data.lines.forEach((line, index) => {
+        const isAsset = assetAccounts.get(`${index}`) ?? false;
+        const isLiability = !isAsset;
+        const needsWae = (isLiability && line.drCrFlag === DrCrFlag.D) || (isAsset && line.drCrFlag === DrCrFlag.C);
+        if (needsWae) {
+          const wae = accountBalances.get(`${index}`)?.wae;
+          if (wae == null) {
+            missingWaeLines.push(index + 1);
+          }
+        }
+      });
+      if (missingWaeLines.length > 0) {
+        toast.error(
+          `WAE (Weighted Average Rate) is not available for line(s) ${missingWaeLines.join(', ')}. ` +
+          `The account must have an FCY balance with a known LCY cost basis.`
+        );
+        return;
+      }
+    }
 
     if (allSameFcy && hasSettlementLine) {
       // FCY settlement transaction: validate FCY balance only

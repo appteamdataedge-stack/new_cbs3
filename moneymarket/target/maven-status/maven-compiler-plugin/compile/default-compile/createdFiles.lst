@@ -90,6 +90,7 @@ com\example\moneymarket\repository\EODLogTableRepository.class
 com\example\moneymarket\exception\GlobalExceptionHandler.class
 com\example\moneymarket\service\TransactionValidationService.class
 com\example\moneymarket\controller\AccountBalanceController.class
+com\example\moneymarket\service\EODStep8ConsolidatedReportService$AccountBalanceDetail.class
 com\example\moneymarket\repository\RevalTranRepository.class
 com\example\moneymarket\repository\GLSetupRepository.class
 com\example\moneymarket\repository\InttAccrTranRepository.class
@@ -104,6 +105,7 @@ com\example\moneymarket\service\ValueDateCalculationService.class
 com\example\moneymarket\controller\TransactionController.class
 com\example\moneymarket\dto\TransactionRequestDTO.class
 com\example\moneymarket\entity\CustAcctMaster$AccountStatus.class
+com\example\moneymarket\service\RevalTranHelper.class
 com\example\moneymarket\service\TransactionHistoryService$AccountDetails.class
 com\example\moneymarket\controller\GLSetupController.class
 com\example\moneymarket\controller\MultiCurrencyTransactionController.class
@@ -120,6 +122,7 @@ com\example\moneymarket\controller\CustomerController.class
 com\example\moneymarket\config\CorsConfig.class
 com\example\moneymarket\dto\UpdateExchangeRateRequest$UpdateExchangeRateRequestBuilder.class
 com\example\moneymarket\dto\TransactionRequestDTO$TransactionRequestDTOBuilder.class
+com\example\moneymarket\service\EODStep8ConsolidatedReportService$SubproductBalanceData$SubproductBalanceDataBuilder.class
 com\example\moneymarket\scheduler\BODScheduler$BODResult.class
 com\example\moneymarket\service\SettlementReportService$PeriodSettlementReport$PeriodSettlementReportBuilder.class
 com\example\moneymarket\dto\AccountDetailsDTO.class
@@ -148,6 +151,7 @@ com\example\moneymarket\entity\WaeMaster$WaeMasterBuilder.class
 com\example\moneymarket\service\InterestRateService.class
 com\example\moneymarket\controller\GLReconciliationController.class
 com\example\moneymarket\dto\CreateExchangeRateRequest$CreateExchangeRateRequestBuilder.class
+com\example\moneymarket\service\EODStep8ConsolidatedReportService$AccountBalanceDetail$AccountBalanceDetailBuilder.class
 com\example\moneymarket\service\GLReconciliationService$ReconciliationEntry.class
 com\example\moneymarket\service\SubProductService.class
 com\example\moneymarket\service\BalanceService.class
@@ -159,6 +163,7 @@ com\example\moneymarket\dto\AccountOptionDTO.class
 com\example\moneymarket\service\GLMovementUpdateService.class
 com\example\moneymarket\entity\CustAcctMaster.class
 com\example\moneymarket\repository\CustAcctMasterRepository.class
+com\example\moneymarket\service\EODStep8ConsolidatedReportService$SubproductBalanceData.class
 com\example\moneymarket\entity\GLBalance$GLBalanceBuilder.class
 com\example\moneymarket\service\EODJobManagementService$EODJobStatus.class
 com\example\moneymarket\service\GLNumberService.class
@@ -208,6 +213,7 @@ com\example\moneymarket\dto\AccountBalanceDTO.class
 com\example\moneymarket\service\EODReportingService$GLBalanceData.class
 com\example\moneymarket\entity\GLSetup.class
 com\example\moneymarket\service\SettlementAlertService$SettlementAlert$SettlementAlertBuilder.class
+com\example\moneymarket\service\EODStep8ConsolidatedReportService.class
 com\example\moneymarket\dto\GLDrCrSummationDTO.class
 com\example\moneymarket\entity\GLBalance.class
 com\example\moneymarket\repository\TranTableRepository.class
@@ -224,6 +230,7 @@ com\example\moneymarket\service\EODJobManagementService$EODJobResult.class
 com\example\moneymarket\dto\ProductResponseDTO.class
 com\example\moneymarket\entity\TranValueDateLog$TranValueDateLogBuilder.class
 com\example\moneymarket\repository\CurrencyMasterRepository.class
+com\example\moneymarket\controller\EODStep8ConsolidatedReportController.class
 com\example\moneymarket\entity\RevalSummary.class
 com\example\moneymarket\service\ExchangeRateService.class
 com\example\moneymarket\dto\CustomerAccountRequestDTO$CustomerAccountRequestDTOBuilder.class

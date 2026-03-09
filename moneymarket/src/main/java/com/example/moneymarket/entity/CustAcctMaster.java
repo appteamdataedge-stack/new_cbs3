@@ -16,6 +16,7 @@ import java.time.LocalTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@org.hibernate.annotations.BatchSize(size = 50)
 public class CustAcctMaster {
 
     @Id

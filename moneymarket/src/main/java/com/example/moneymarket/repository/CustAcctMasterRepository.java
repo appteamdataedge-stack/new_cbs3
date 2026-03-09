@@ -10,9 +10,14 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+
+
 @Repository
 public interface CustAcctMasterRepository extends JpaRepository<CustAcctMaster, String> {
     
+    @Query("SELECT c FROM CustAcctMaster c WHERE c.accountNo IN :ids")
+    List<CustAcctMaster> findByAccountNos(@Param("ids") List<String> ids);
+
     List<CustAcctMaster> findByCustomerCustId(Integer custId);
     
     List<CustAcctMaster> findBySubProductSubProductId(Integer subProductId);

@@ -22,23 +22,22 @@ public class SubProductGLBalanceReportDTO {
     private String glNumber;
     private String glName;
     private Long accountCount;
-    private BigDecimal totalAccountBalance;
+    private BigDecimal totalAccountBalance;     // SUM(acc_bal)     — native/FCY currency
+    private BigDecimal totalAccountBalanceLcy;  // SUM(acc_bal_lcy) — BDT equivalent (NEW)
     private BigDecimal totalGLBalance;
     private BigDecimal difference;
     private String status;
 
     /**
-     * Calculate the difference and status
+     * Calculate the difference and status.
+     * Difference = totalAccountBalanceLcy - totalGLBalance (both in BDT — currency-matched)
      */
     public void calculateDifferenceAndStatus() {
-        if (totalAccountBalance == null) {
-            totalAccountBalance = BigDecimal.ZERO;
-        }
-        if (totalGLBalance == null) {
-            totalGLBalance = BigDecimal.ZERO;
-        }
+        if (totalAccountBalance == null) totalAccountBalance = BigDecimal.ZERO;
+        if (totalAccountBalanceLcy == null) totalAccountBalanceLcy = BigDecimal.ZERO;
+        if (totalGLBalance == null) totalGLBalance = BigDecimal.ZERO;
 
-        this.difference = totalAccountBalance.subtract(totalGLBalance);
+        this.difference = totalAccountBalanceLcy.subtract(totalGLBalance);
         this.status = difference.compareTo(BigDecimal.ZERO) == 0 ? "MATCHED" : "MISMATCHED";
     }
 }

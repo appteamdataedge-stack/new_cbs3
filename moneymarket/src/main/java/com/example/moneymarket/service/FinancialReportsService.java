@@ -5,6 +5,7 @@ import com.example.moneymarket.entity.GLBalance;
 import com.example.moneymarket.entity.GLSetup;
 import com.example.moneymarket.exception.BusinessException;
 import com.example.moneymarket.repository.AcctBalRepository;
+import com.example.moneymarket.repository.AcctBalLcyRepository;
 import com.example.moneymarket.repository.CustAcctMasterRepository;
 import com.example.moneymarket.repository.OFAcctMasterRepository;
 import com.example.moneymarket.repository.GLBalanceRepository;
@@ -40,6 +41,7 @@ public class FinancialReportsService {
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final OFAcctMasterRepository ofAcctMasterRepository;
     private final AcctBalRepository acctBalRepository;
+    private final AcctBalLcyRepository acctBalLcyRepository;
     private final SystemDateService systemDateService;
 
     /**
@@ -487,34 +489,43 @@ public class FinancialReportsService {
             int totalAccountCount = customerAccounts.size() + officeAccounts.size();
             dto.setAccountCount((long) totalAccountCount);
 
-            // Calculate total account balance from Acct_Bal table
-            BigDecimal totalAccountBalance = BigDecimal.ZERO;
+            // Collect all account numbers for set-based queries (no row-by-row)
+            List<String> allAccountNos = new ArrayList<>();
+            customerAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+            officeAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
 
-            // Add customer account balances
-            for (com.example.moneymarket.entity.CustAcctMaster account : customerAccounts) {
-                java.util.Optional<com.example.moneymarket.entity.AcctBal> acctBalOpt =
-                    acctBalRepository.findByAccountNoAndTranDate(account.getAccountNo(), reportDate);
-                if (acctBalOpt.isPresent()) {
-                    BigDecimal currentBalance = acctBalOpt.get().getCurrentBalance();
-                    if (currentBalance != null) {
-                        totalAccountBalance = totalAccountBalance.add(currentBalance);
+            BigDecimal totalAccBalFcy = BigDecimal.ZERO;  // SUM(acc_bal)     — native currency
+            BigDecimal totalAccBalLcy = BigDecimal.ZERO;  // SUM(acc_bal_lcy) — BDT equivalent
+
+            if (!allAccountNos.isEmpty()) {
+                // One query for AcctBal (native/FCY amounts)
+                Map<String, com.example.moneymarket.entity.AcctBal> acctBalMap =
+                    acctBalRepository.findByAccountNoInAndTranDate(allAccountNos, reportDate)
+                        .stream()
+                        .collect(Collectors.toMap(
+                            com.example.moneymarket.entity.AcctBal::getAccountNo, ab -> ab));
+
+                // One query for AcctBalLcy (BDT equivalents)
+                Map<String, com.example.moneymarket.entity.AcctBalLcy> acctBalLcyMap =
+                    acctBalLcyRepository.findByAccountNoInAndTranDate(allAccountNos, reportDate)
+                        .stream()
+                        .collect(Collectors.toMap(
+                            com.example.moneymarket.entity.AcctBalLcy::getAccountNo, ab -> ab));
+
+                for (String accountNo : allAccountNos) {
+                    com.example.moneymarket.entity.AcctBal bal = acctBalMap.get(accountNo);
+                    if (bal != null && bal.getCurrentBalance() != null) {
+                        totalAccBalFcy = totalAccBalFcy.add(bal.getCurrentBalance());
+                    }
+                    com.example.moneymarket.entity.AcctBalLcy lcyBal = acctBalLcyMap.get(accountNo);
+                    if (lcyBal != null && lcyBal.getClosingBalLcy() != null) {
+                        totalAccBalLcy = totalAccBalLcy.add(lcyBal.getClosingBalLcy());
                     }
                 }
             }
 
-            // Add office account balances
-            for (com.example.moneymarket.entity.OFAcctMaster account : officeAccounts) {
-                java.util.Optional<com.example.moneymarket.entity.AcctBal> acctBalOpt =
-                    acctBalRepository.findByAccountNoAndTranDate(account.getAccountNo(), reportDate);
-                if (acctBalOpt.isPresent()) {
-                    BigDecimal currentBalance = acctBalOpt.get().getCurrentBalance();
-                    if (currentBalance != null) {
-                        totalAccountBalance = totalAccountBalance.add(currentBalance);
-                    }
-                }
-            }
-
-            dto.setTotalAccountBalance(totalAccountBalance);
+            dto.setTotalAccountBalance(totalAccBalFcy);     // acc_bal — FCY native
+            dto.setTotalAccountBalanceLcy(totalAccBalLcy);  // acc_bal_lcy — BDT
 
             // Get GL balance for this GL number
             BigDecimal glBalance = glBalanceRepository.findByTranDateAndGlNumIn(reportDate, List.of(subProduct.getCumGLNum()))
@@ -537,9 +548,11 @@ public class FinancialReportsService {
     /**
      * Generate Subproduct-wise Account & GL Balance Report CSV content
      *
-     * Format:
+     * Format (10 columns):
      * Sub Product Code, Sub Product Name, GL Number, GL Name, Account Count,
-     * Total Account Balance, Total GL Balance, Difference, Status
+     * Total Account Balance (FCY), Total Account Balance (LCY), Total GL Balance, Difference, Status
+     *
+     * Difference = SUM(acc_bal_lcy) - SUM(GL Balance)  [both BDT — currency-matched]
      */
     private byte[] generateSubProductGLBalanceCSV(List<SubProductGLBalanceReportDTO> reportData, LocalDate reportDate)
             throws IOException {
@@ -550,13 +563,14 @@ public class FinancialReportsService {
         csvContent.append("Subproduct-wise Account & GL Balance Report\n");
         csvContent.append(String.format("As of: %s\n\n", reportDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))));
 
-        // Write header
+        // Write header — 10 columns
         csvContent.append("Sub Product Code,Sub Product Name,GL Number,GL Name,Account Count,");
-        csvContent.append("Total Account Balance,Total GL Balance,Difference,Status\n");
+        csvContent.append("Total Account Balance (FCY),Total Account Balance (LCY),Total GL Balance,Difference,Status\n");
 
         // Initialize totals
         long totalAccountCount = 0;
-        BigDecimal grandTotalAccountBalance = BigDecimal.ZERO;
+        BigDecimal grandTotalAccBalFcy = BigDecimal.ZERO;
+        BigDecimal grandTotalAccBalLcy = BigDecimal.ZERO;
         BigDecimal grandTotalGLBalance = BigDecimal.ZERO;
         BigDecimal grandTotalDifference = BigDecimal.ZERO;
         int matchedCount = 0;
@@ -564,22 +578,24 @@ public class FinancialReportsService {
 
         // Write data rows
         for (SubProductGLBalanceReportDTO row : reportData) {
-            csvContent.append(String.format("%s,%s,%s,%s,%d,%s,%s,%s,%s\n",
+            csvContent.append(String.format("%s,%s,%s,%s,%d,%s,%s,%s,%s,%s\n",
                     row.getSubProductCode(),
                     row.getSubProductName(),
                     row.getGlNumber(),
                     row.getGlName(),
                     row.getAccountCount(),
-                    formatAmount(row.getTotalAccountBalance()),
-                    formatAmount(row.getTotalGLBalance()),
-                    formatAmount(row.getDifference()),
-                    row.getStatus()));
+                    formatAmount(row.getTotalAccountBalance()),      // col 6: FCY (acc_bal)
+                    formatAmount(row.getTotalAccountBalanceLcy()),   // col 7: LCY (acc_bal_lcy) — NEW
+                    formatAmount(row.getTotalGLBalance()),           // col 8: GL balance
+                    formatAmount(row.getDifference()),               // col 9: LCY - GL (both BDT)
+                    row.getStatus()));                               // col 10: MATCHED / MISMATCHED
 
             // Accumulate totals
             totalAccountCount += row.getAccountCount();
-            grandTotalAccountBalance = grandTotalAccountBalance.add(row.getTotalAccountBalance());
-            grandTotalGLBalance = grandTotalGLBalance.add(row.getTotalGLBalance());
-            grandTotalDifference = grandTotalDifference.add(row.getDifference());
+            grandTotalAccBalFcy = grandTotalAccBalFcy.add(nvl(row.getTotalAccountBalance()));
+            grandTotalAccBalLcy = grandTotalAccBalLcy.add(nvl(row.getTotalAccountBalanceLcy()));
+            grandTotalGLBalance = grandTotalGLBalance.add(nvl(row.getTotalGLBalance()));
+            grandTotalDifference = grandTotalDifference.add(nvl(row.getDifference()));
 
             if ("MATCHED".equals(row.getStatus())) {
                 matchedCount++;
@@ -588,16 +604,18 @@ public class FinancialReportsService {
             }
         }
 
-        // Write separator
-        csvContent.append("---,---,---,---,---,---,---,---,---\n");
+        // Write separator — 10 dashes to match column count
+        csvContent.append("---,---,---,---,---,---,---,---,---,---\n");
 
         // Write footer row with totals
-        csvContent.append(String.format("TOTAL,,%d Subproducts,,%d,%s,%s,%s,\"%d Matched, %d Mismatched\"\n",
+        // Difference total = SUM(acc_bal_lcy) - SUM(GL balance) — both BDT
+        csvContent.append(String.format("TOTAL,,%d Subproducts,,%d,%s,%s,%s,%s,\"%d Matched, %d Mismatched\"\n",
                 reportData.size(),
                 totalAccountCount,
-                formatAmount(grandTotalAccountBalance),
-                formatAmount(grandTotalGLBalance),
-                formatAmount(grandTotalDifference),
+                formatAmount(grandTotalAccBalFcy),   // total FCY (display only)
+                formatAmount(grandTotalAccBalLcy),   // total LCY (BDT)
+                formatAmount(grandTotalGLBalance),   // total GL balance
+                formatAmount(grandTotalDifference),  // SUM(LCY) - SUM(GL)
                 matchedCount,
                 mismatchedCount));
 

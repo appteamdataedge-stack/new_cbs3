@@ -470,34 +470,77 @@ public class TransactionValidationService {
     
     /**
      * Update account balance after a transaction with validation
-     * 
+     *
      * @param accountNo The account number
      * @param drCrFlag The debit/credit flag
-     * @param amount The transaction amount
+     * @param amount The transaction amount (FCY for FCY accounts, LCY for BDT accounts)
      * @throws BusinessException if validation fails
      */
     @Transactional
     public void updateAccountBalanceForTransaction(String accountNo, DrCrFlag drCrFlag, BigDecimal amount) {
+        updateAccountBalanceForTransaction(accountNo, drCrFlag, amount, null);
+    }
+
+    /**
+     * Update account balance after a transaction with validation, also recalculates WAE on FCY credits.
+     *
+     * @param accountNo The account number
+     * @param drCrFlag  The debit/credit flag
+     * @param amount    The transaction amount (FCY units for FCY accounts, LCY for BDT accounts)
+     * @param lcyAmount LCY amount for WAE recalculation (only used when account is FCY and drCrFlag == C)
+     * @throws BusinessException if validation fails
+     */
+    @Transactional
+    public void updateAccountBalanceForTransaction(String accountNo, DrCrFlag drCrFlag,
+                                                   BigDecimal amount, BigDecimal lcyAmount) {
         // Validate the transaction before updating balance
         validateTransaction(accountNo, drCrFlag, amount);
-        
+
         // Find the account balance
         AcctBal balance = acctBalRepository.findLatestByAccountNo(accountNo)
                 .orElseThrow(() -> new BusinessException("Balance for account " + accountNo + " not found"));
-        
-        // Calculate the balance change
+
+        // Snapshot FCY balance BEFORE applying this transaction (needed for WAE formula)
+        BigDecimal prevFcy = balance.getCurrentBalance() != null ? balance.getCurrentBalance() : BigDecimal.ZERO;
+
+        // Calculate and apply the balance change
         BigDecimal balanceChange = (drCrFlag == DrCrFlag.D) ? amount.negate() : amount;
-        
-        // Update the balance
-        balance.setCurrentBalance(balance.getCurrentBalance().add(balanceChange));
+        balance.setCurrentBalance(prevFcy.add(balanceChange));
         balance.setAvailableBalance(calculateAvailableBalance(accountNo, balance.getCurrentBalance()));
-        // Replaced device-based date/time with System_Date (SystemDateService) - CBS Compliance Fix
         balance.setLastUpdated(systemDateService.getSystemDateTime());
-        
-        // Save the updated balance
+
+        // WAE recalculation — only for FCY credit postings with a known LCY amount
+        String accountCcy = balance.getAccountCcy();
+        if (drCrFlag == DrCrFlag.C
+                && lcyAmount != null
+                && lcyAmount.compareTo(BigDecimal.ZERO) > 0
+                && accountCcy != null
+                && !"BDT".equalsIgnoreCase(accountCcy)) {
+
+            // Carry forward previous WAE: check current record first, then scan history
+            BigDecimal prevWae = balance.getWaeRate();
+            if (prevWae == null) {
+                prevWae = acctBalRepository.findLatestWaeRate(accountNo).orElse(null);
+            }
+
+            // prevLcy = prevWAE × prevFcy (historical cost of existing position)
+            BigDecimal prevLcy = (prevWae != null && prevFcy.compareTo(BigDecimal.ZERO) > 0)
+                    ? prevWae.multiply(prevFcy) : BigDecimal.ZERO;
+
+            BigDecimal totalFcy = prevFcy.add(amount);
+            BigDecimal totalLcy = prevLcy.add(lcyAmount);
+
+            if (totalFcy.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal newWae = totalLcy.divide(totalFcy, 4, java.math.RoundingMode.HALF_UP);
+                balance.setWaeRate(newWae);
+                log.info("WAE updated for account {}: prevWAE={}, prevFcy={}, lcyCredit={}, newWAE={}",
+                        accountNo, prevWae, prevFcy, lcyAmount, newWae);
+            }
+        }
+
         acctBalRepository.save(balance);
-        
-        log.info("Updated balance for account {}: {} {} {}, new balance = {}", 
+
+        log.info("Updated balance for account {}: {} {} {}, new balance = {}",
                 accountNo, drCrFlag, amount, balanceChange, balance.getCurrentBalance());
     }
 

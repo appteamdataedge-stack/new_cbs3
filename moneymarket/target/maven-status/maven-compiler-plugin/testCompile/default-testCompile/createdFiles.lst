@@ -1,5 +1,6 @@
 com\example\moneymarket\controller\TransactionControllerTest$TestConfig.class
 com\example\moneymarket\service\CustomerServiceTest.class
+com\example\moneymarket\service\EODStep8ConsolidatedReportServiceTest.class
 com\example\moneymarket\service\TransactionValidationServiceTest.class
 com\example\moneymarket\controller\MultiCurrencyTransactionControllerTest.class
 com\example\moneymarket\repository\GLMovementRepositoryNativeQueryTest.class

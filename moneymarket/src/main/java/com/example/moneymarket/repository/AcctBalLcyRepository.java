@@ -42,6 +42,9 @@ public interface AcctBalLcyRepository extends JpaRepository<AcctBalLcy, AcctBalL
     @Query("SELECT abl FROM AcctBalLcy abl WHERE abl.tranDate = ?1 AND abl.accountNo = ?2")
     Optional<AcctBalLcy> findByTranDateAndAccountNo(LocalDate tranDate, String accountNo);
     
+    @Query("SELECT abl FROM AcctBalLcy abl WHERE abl.accountNo IN ?1 AND abl.tranDate = ?2")
+    List<AcctBalLcy> findByAccountNoInAndTranDate(List<String> accountNos, LocalDate tranDate);
+
     /**
      * Get the latest balance record for an account (for current balance)
      */

@@ -12,6 +12,7 @@ import com.example.moneymarket.entity.TranTable.DrCrFlag;
 import com.example.moneymarket.entity.TranTable.TranStatus;
 import com.example.moneymarket.exception.BusinessException;
 import com.example.moneymarket.exception.ResourceNotFoundException;
+import com.example.moneymarket.repository.AcctBalRepository;
 import com.example.moneymarket.repository.CustAcctMasterRepository;
 import com.example.moneymarket.repository.GLMovementRepository;
 import com.example.moneymarket.repository.GLSetupRepository;
@@ -42,6 +43,7 @@ import java.util.stream.Collectors;
 public class TransactionService {
 
     private final TranTableRepository tranTableRepository;
+    private final AcctBalRepository acctBalRepository;
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final GLMovementRepository glMovementRepository;
     private final GLSetupRepository glSetupRepository;
@@ -149,10 +151,9 @@ public class TransactionService {
                         lineDTO.getAccountNo() + ": " + e.getMessage());
             }
             
-            // Exchange rate and LCY per leg:
+            // Exchange rate and LCY per leg — resolved INDEPENDENTLY for each leg:
             //   Settlement trigger (Liability DR, Asset CR) → WAE of THIS account from acc_bal
-            //   Non-settlement side (Liability CR, Asset DR) → MID rate
-            //   Asset DR + Liability CR (both non-settlement)  → both MID, no gain/loss rows
+            //   Non-settlement side (Liability CR, Asset DR, or Asset DR + Liability CR) → MID rate
             BigDecimal lcyAmt = lineDTO.getLcyAmt();
             BigDecimal exchangeRate = lineDTO.getExchangeRate();
             boolean isFcy = lineDTO.getTranCcy() != null && !"BDT".equals(lineDTO.getTranCcy());
@@ -161,24 +162,34 @@ public class TransactionService {
                 boolean asset = accountInfo.isAssetAccount();
                 boolean isDr = lineDTO.getDrCrFlag() == DrCrFlag.D;
                 boolean isCr = lineDTO.getDrCrFlag() == DrCrFlag.C;
-                // Each leg resolves its OWN rate independently — never share a rate variable across legs.
-                // Settlement trigger = Liability DR or Asset CR → WAE from acc_bal for THIS account.
-                // All other sides → MID rate.
-                boolean useWaeForThisLeg = isSettlement && ((liability && isDr) || (asset && isCr));
-                if (useWaeForThisLeg) {
-                    BigDecimal lineWae = balanceService.getComputedAccountBalance(lineDTO.getAccountNo(), tranDate).getWae();
-                    if (lineWae == null) {
-                        lineWae = midRateFcy;
+
+                // Each leg resolves its OWN rate from its OWN account — rates are NEVER shared between legs.
+                // Settlement trigger = Liability DR or Asset CR → WAE from acc_bal.WAE_Rate for THIS account.
+                // All other combinations → MID rate.
+                boolean isSettlementTrigger = isSettlement && ((liability && isDr) || (asset && isCr));
+
+                if (isSettlementTrigger) {
+                    // Read WAE for this leg's account:
+                    // Primary  — most recent non-null acc_bal.WAE_Rate (stored at each credit posting)
+                    // Fallback — live computation via BalanceService (FCY balance / LCY balance)
+                    BigDecimal lineWae = acctBalRepository.findLatestWaeRate(lineDTO.getAccountNo()).orElse(null);
+                    if (lineWae == null || lineWae.compareTo(BigDecimal.ZERO) == 0) {
+                        lineWae = balanceService.getComputedAccountBalance(lineDTO.getAccountNo(), tranDate).getWae();
+                    }
+                    if (lineWae == null || lineWae.compareTo(BigDecimal.ZERO) == 0) {
+                        throw new BusinessException(
+                            "WAE not available for settlement account " + lineDTO.getAccountNo() +
+                            ". The account must have an FCY balance with a known LCY cost basis.");
                     }
                     exchangeRate = lineWae;
                     lcyAmt = lineDTO.getFcyAmt().multiply(lineWae).setScale(2, RoundingMode.HALF_UP);
-                    log.debug("Rate assignment: account {} ({} {}) → WAE={}, LCY={}",
+                    log.info("Rate assignment: account {} ({} {}) → WAE={} (settlement trigger), LCY={}",
                             lineDTO.getAccountNo(), liability ? "Liability" : "Asset",
                             isDr ? "DR" : "CR", exchangeRate, lcyAmt);
                 } else {
                     exchangeRate = midRateFcy;
                     lcyAmt = lineDTO.getFcyAmt().multiply(midRateFcy).setScale(2, RoundingMode.HALF_UP);
-                    log.debug("Rate assignment: account {} ({} {}) → MID={}, LCY={}",
+                    log.info("Rate assignment: account {} ({} {}) → MID={} (non-settlement side), LCY={}",
                             lineDTO.getAccountNo(), liability ? "Liability" : "Asset",
                             isDr ? "DR" : "CR", exchangeRate, lcyAmt);
                 }
@@ -399,13 +410,17 @@ public class TransactionService {
             if (!isGlOnlyRow) {
                 // Customer/Office account: update account balance and GL
                 BigDecimal accountBalanceAmount;
+                BigDecimal lcyAmountForWae;
                 if ("BDT".equals(transaction.getTranCcy())) {
                     accountBalanceAmount = transaction.getLcyAmt();
+                    lcyAmountForWae = null; // BDT account — no WAE update needed
                 } else {
                     accountBalanceAmount = transaction.getFcyAmt();
+                    lcyAmountForWae = transaction.getLcyAmt(); // FCY account — pass LCY for WAE recalculation
                 }
                 validationService.updateAccountBalanceForTransaction(
-                        transaction.getAccountNo(), transaction.getDrCrFlag(), accountBalanceAmount);
+                        transaction.getAccountNo(), transaction.getDrCrFlag(),
+                        accountBalanceAmount, lcyAmountForWae);
             }
 
             // Update GL balance (ALWAYS in BDT)

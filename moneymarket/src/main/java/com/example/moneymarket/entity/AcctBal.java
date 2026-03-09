@@ -51,4 +51,7 @@ public class AcctBal {
 
     @Column(name = "Last_Updated", nullable = false)
     private LocalDateTime lastUpdated;
+
+    @Column(name = "WAE_Rate", precision = 10, scale = 4, nullable = true)
+    private BigDecimal waeRate;
 }

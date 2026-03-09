@@ -58,13 +58,13 @@ public class RevalTran {
     @Column(name = "Reval_Diff", nullable = false, precision = 20, scale = 2)
     private BigDecimal revalDiff;
 
-    @Column(name = "Reval_GL", nullable = false, length = 20)
+    @Column(name = "Reval_GL", nullable = true, length = 20)
     private String revalGl;
 
-    @Column(name = "Tran_Id", length = 20)
+    @Column(name = "Tran_Id", length = 30)
     private String tranId;
 
-    @Column(name = "Reversal_Tran_Id", length = 20)
+    @Column(name = "Reversal_Tran_Id", length = 30)
     private String reversalTranId;
 
     @Column(name = "Status", nullable = false, length = 20)

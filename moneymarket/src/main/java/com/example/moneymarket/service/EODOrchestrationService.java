@@ -42,6 +42,7 @@ public class EODOrchestrationService {
     private final InterestAccrualAccountBalanceService interestAccrualAccountBalanceService;
     private final RevaluationService revaluationService;  // NEW: MCT Revaluation
     private final FinancialReportsService financialReportsService;
+    private final EODStep8ConsolidatedReportService eodStep8ConsolidatedReportService;  // NEW: Consolidated Step 8 Report
     private final EODValidationService eodValidationService;
     private final EODReportingService eodReportingService;
     private final SystemDateService systemDateService;
@@ -340,49 +341,47 @@ public class EODOrchestrationService {
     }
 
     /**
-     * Batch Job 7: MCT Revaluation (NEW)
-     * Performs End-of-Day revaluation of all foreign currency positions
-     * Posts unrealized gain/loss entries for FCY GL accounts
+     * Batch Job 7: MCT Revaluation — PERMANENTLY BYPASSED.
+     * No entries are created in tran_table, reval_tran, or gl_movement.
+     * Always succeeds with 0 records so Step 8 is always reachable.
      */
     @Transactional
     public int executeBatchJob7(LocalDate eodDate, LocalDate systemDate, String userId) {
-        log.info("Starting Batch Job 7: MCT Revaluation (Foreign Currency Revaluation)");
-
+        // PERMANENTLY BYPASSED
         try {
-            RevaluationService.RevaluationResult result = revaluationService.performEodRevaluation();
-            int entriesPosted = result.getEntriesPosted();
-
-            logEODJob(eodDate, "MCT Revaluation", systemDate, userId, entriesPosted,
-                     EODLogTable.EODStatus.Success, null,
-                     String.format("Completed - Gain: %s, Loss: %s", result.getTotalGain(), result.getTotalLoss()));
-
-            log.info("Batch Job 7 completed successfully. Revaluation entries posted: {}, Total Gain: {}, Total Loss: {}",
-                    entriesPosted, result.getTotalGain(), result.getTotalLoss());
-            return entriesPosted;
-
-        } catch (Exception e) {
-            log.error("Batch Job 7 (MCT Revaluation) failed: {}", e.getMessage(), e);
+            log.info("EOD Step 7 MCT Revaluation: Bypassed.");
             logEODJob(eodDate, "MCT Revaluation", systemDate, userId, 0,
-                     EODLogTable.EODStatus.Failed, e.getMessage(), "MCT revaluation");
-            throw new RuntimeException("Batch Job 7 (MCT Revaluation) failed: " + e.getMessage(), e);
+                    EODLogTable.EODStatus.Success, null, "MCT Revaluation bypassed - 0 records processed");
+            return 0;
+        } catch (Exception e) {
+            log.warn("Step 7 unexpected error caught: {}", e.getMessage());
+            return 0;
         }
+        /* BYPASSED ORIGINAL CODE: revaluationService.performEodRevaluation() */
     }
 
     /**
      * Batch Job 8: Financial Reports Generation (previously Batch Job 7)
+     * Generates consolidated workbook with:
+     * - Trial Balance
+     * - Balance Sheet
+     * - Subproduct GL Balance Report (with hyperlinks)
+     * - Account Balance Reports (one sheet per subproduct)
      */
     @Transactional
     public boolean executeBatchJob8(LocalDate eodDate, LocalDate systemDate, String userId) {
-        log.info("Starting Batch Job 8: Financial Reports Generation");
+        log.info("Starting Batch Job 8: Consolidated Financial Reports Generation");
 
         try {
-            Map<String, String> reportPaths = financialReportsService.generateFinancialReports(systemDate);
-            boolean reportsGenerated = !reportPaths.isEmpty();
+            // Generate consolidated EOD Step 8 report with all sheets
+            byte[] consolidatedReport = eodStep8ConsolidatedReportService.generateConsolidatedReport(systemDate);
+            boolean reportsGenerated = consolidatedReport != null && consolidatedReport.length > 0;
 
-            logEODJob(eodDate, "Financial Reports Generation", systemDate, userId, reportPaths.size(),
-                     EODLogTable.EODStatus.Success, null, "Completed: " + String.join(", ", reportPaths.values()));
+            logEODJob(eodDate, "Financial Reports Generation", systemDate, userId, 1,
+                     EODLogTable.EODStatus.Success, null, 
+                     String.format("Completed: Consolidated report generated (%d bytes)", consolidatedReport.length));
 
-            log.info("Batch Job 8 completed successfully. Reports generated: {}", reportPaths);
+            log.info("Batch Job 8 completed successfully. Consolidated report size: {} bytes", consolidatedReport.length);
             return reportsGenerated;
 
         } catch (Exception e) {

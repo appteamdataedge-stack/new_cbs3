@@ -18,6 +18,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -36,6 +37,7 @@ public class SubProductGLReconciliationService {
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final OFAcctMasterRepository ofAcctMasterRepository;
     private final AcctBalRepository acctBalRepository;
+    private final AcctBalLcyRepository acctBalLcyRepository;
     private final GLBalanceRepository glBalanceRepository;
     private final GLSetupRepository glSetupRepository;
     private final GLMovementRepository glMovementRepository;
@@ -132,101 +134,130 @@ public class SubProductGLReconciliationService {
     }
 
     /**
-     * Calculate account balances for a subproduct with FCY breakdown
-     * NEW: Now tracks actual FCY amounts separately from LCY
+     * Calculate account balances for a subproduct with FCY breakdown.
+     * FIX: Uses Acct_Bal_LCY for FCY accounts so totalLCYBalance is always in BDT.
+     * Uses set-based queries (one per table) instead of row-by-row fetches.
      */
     private AccountBalanceSummary calculateAccountBalances(SubProdMaster subProduct, LocalDate reportDate) {
+        // Get customer and office accounts
+        List<CustAcctMaster> customerAccounts = subProduct.getSubProductId() != null
+                ? custAcctMasterRepository.findBySubProductSubProductId(subProduct.getSubProductId())
+                : new ArrayList<>();
+        List<OFAcctMaster> officeAccounts = subProduct.getSubProductId() != null
+                ? ofAcctMasterRepository.findBySubProductSubProductId(subProduct.getSubProductId())
+                : new ArrayList<>();
+
+        // Collect all account numbers for set-based queries
+        List<String> allAccountNos = new ArrayList<>();
+        customerAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+        officeAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+
+        if (allAccountNos.isEmpty()) {
+            return AccountBalanceSummary.builder()
+                    .accountCount(0L)
+                    .totalLCYBalance(BigDecimal.ZERO)
+                    .totalFCYAmount(BigDecimal.ZERO)
+                    .fcyCurrency("N/A")
+                    .fcyAccountsExist(false)
+                    .fcyBalances("N/A")
+                    .accountBalances(new ArrayList<>())
+                    .build();
+        }
+
+        // Set-based fetch: one query each for AcctBal (FCY native) and AcctBalLcy (BDT)
+        Map<String, AcctBal> acctBalMap = acctBalRepository
+                .findByAccountNoInAndTranDate(allAccountNos, reportDate)
+                .stream()
+                .collect(Collectors.toMap(AcctBal::getAccountNo, ab -> ab));
+        Map<String, AcctBalLcy> acctBalLcyMap = acctBalLcyRepository
+                .findByAccountNoInAndTranDate(allAccountNos, reportDate)
+                .stream()
+                .collect(Collectors.toMap(AcctBalLcy::getAccountNo, ab -> ab));
+
         List<AccountBalanceInfo> accountBalances = new ArrayList<>();
         BigDecimal totalLCYBalance = BigDecimal.ZERO;
         BigDecimal totalFCYAmountInOriginalCurrency = BigDecimal.ZERO;
         boolean fcyAccountsExist = false;
         String primaryFCYCurrency = null;
 
-        // Get customer accounts
-        List<CustAcctMaster> customerAccounts = subProduct.getSubProductId() != null
-                ? custAcctMasterRepository.findBySubProductSubProductId(subProduct.getSubProductId())
-                : new ArrayList<>();
-
-        // Get office accounts
-        List<OFAcctMaster> officeAccounts = subProduct.getSubProductId() != null
-                ? ofAcctMasterRepository.findBySubProductSubProductId(subProduct.getSubProductId())
-                : new ArrayList<>();
-
         // Process customer accounts
         for (CustAcctMaster account : customerAccounts) {
-            Optional<AcctBal> balanceOpt = acctBalRepository.findByAccountNoAndTranDate(
-                    account.getAccountNo(), reportDate);
-            
-            if (balanceOpt.isPresent()) {
-                AcctBal balance = balanceOpt.get();
-                BigDecimal lcyBalance = balance.getCurrentBalance() != null ? balance.getCurrentBalance() : BigDecimal.ZERO;
-                String currency = balance.getAccountCcy() != null ? balance.getAccountCcy() : LCY;
-                
-                totalLCYBalance = totalLCYBalance.add(lcyBalance);
-                
-                // Track FCY amounts - need to get the original FCY amount
-                // For now, we'll use the LCY balance for FCY accounts and track the currency
-                if (!LCY.equals(currency)) {
-                    fcyAccountsExist = true;
-                    if (primaryFCYCurrency == null) {
-                        primaryFCYCurrency = currency;
-                    }
-                    // Add to FCY total if same currency
-                    if (currency.equals(primaryFCYCurrency)) {
-                        totalFCYAmountInOriginalCurrency = totalFCYAmountInOriginalCurrency.add(lcyBalance);
-                    }
+            AcctBal balance = acctBalMap.get(account.getAccountNo());
+            if (balance == null) continue;
+
+            String currency = balance.getAccountCcy() != null ? balance.getAccountCcy() : LCY;
+            BigDecimal fcyNativeBalance = balance.getCurrentBalance() != null ? balance.getCurrentBalance() : BigDecimal.ZERO;
+
+            BigDecimal lcyBalance;
+            BigDecimal fcyBalance = null;
+            if (LCY.equals(currency)) {
+                // BDT account: currentBalance is already in BDT
+                lcyBalance = fcyNativeBalance;
+            } else {
+                // FCY account: get BDT equivalent from Acct_Bal_LCY; keep native amount for FCY display
+                AcctBalLcy lcyRecord = acctBalLcyMap.get(account.getAccountNo());
+                lcyBalance = (lcyRecord != null && lcyRecord.getClosingBalLcy() != null)
+                        ? lcyRecord.getClosingBalLcy() : BigDecimal.ZERO;
+                fcyBalance = fcyNativeBalance;
+                fcyAccountsExist = true;
+                if (primaryFCYCurrency == null) primaryFCYCurrency = currency;
+                if (currency.equals(primaryFCYCurrency)) {
+                    totalFCYAmountInOriginalCurrency = totalFCYAmountInOriginalCurrency.add(fcyNativeBalance);
                 }
-                
-                accountBalances.add(AccountBalanceInfo.builder()
-                        .accountNo(account.getAccountNo())
-                        .accountName(account.getAcctName())
-                        .accountType("Customer")
-                        .currency(currency)
-                        .lcyBalance(lcyBalance)
-                        .build());
             }
+
+            totalLCYBalance = totalLCYBalance.add(lcyBalance);
+            accountBalances.add(AccountBalanceInfo.builder()
+                    .accountNo(account.getAccountNo())
+                    .accountName(account.getAcctName())
+                    .accountType("Customer")
+                    .currency(currency)
+                    .lcyBalance(lcyBalance)
+                    .fcyBalance(fcyBalance)
+                    .build());
         }
 
         // Process office accounts
         for (OFAcctMaster account : officeAccounts) {
-            Optional<AcctBal> balanceOpt = acctBalRepository.findByAccountNoAndTranDate(
-                    account.getAccountNo(), reportDate);
-            
-            if (balanceOpt.isPresent()) {
-                AcctBal balance = balanceOpt.get();
-                BigDecimal lcyBalance = balance.getCurrentBalance() != null ? balance.getCurrentBalance() : BigDecimal.ZERO;
-                String currency = balance.getAccountCcy() != null ? balance.getAccountCcy() : LCY;
-                
-                totalLCYBalance = totalLCYBalance.add(lcyBalance);
-                
-                // Track FCY amounts
-                if (!LCY.equals(currency)) {
-                    fcyAccountsExist = true;
-                    if (primaryFCYCurrency == null) {
-                        primaryFCYCurrency = currency;
-                    }
-                    // Add to FCY total if same currency
-                    if (currency.equals(primaryFCYCurrency)) {
-                        totalFCYAmountInOriginalCurrency = totalFCYAmountInOriginalCurrency.add(lcyBalance);
-                    }
+            AcctBal balance = acctBalMap.get(account.getAccountNo());
+            if (balance == null) continue;
+
+            String currency = balance.getAccountCcy() != null ? balance.getAccountCcy() : LCY;
+            BigDecimal fcyNativeBalance = balance.getCurrentBalance() != null ? balance.getCurrentBalance() : BigDecimal.ZERO;
+
+            BigDecimal lcyBalance;
+            BigDecimal fcyBalance = null;
+            if (LCY.equals(currency)) {
+                lcyBalance = fcyNativeBalance;
+            } else {
+                AcctBalLcy lcyRecord = acctBalLcyMap.get(account.getAccountNo());
+                lcyBalance = (lcyRecord != null && lcyRecord.getClosingBalLcy() != null)
+                        ? lcyRecord.getClosingBalLcy() : BigDecimal.ZERO;
+                fcyBalance = fcyNativeBalance;
+                fcyAccountsExist = true;
+                if (primaryFCYCurrency == null) primaryFCYCurrency = currency;
+                if (currency.equals(primaryFCYCurrency)) {
+                    totalFCYAmountInOriginalCurrency = totalFCYAmountInOriginalCurrency.add(fcyNativeBalance);
                 }
-                
-                accountBalances.add(AccountBalanceInfo.builder()
-                        .accountNo(account.getAccountNo())
-                        .accountName(account.getAcctName())
-                        .accountType("Office")
-                        .currency(currency)
-                        .lcyBalance(lcyBalance)
-                        .build());
             }
+
+            totalLCYBalance = totalLCYBalance.add(lcyBalance);
+            accountBalances.add(AccountBalanceInfo.builder()
+                    .accountNo(account.getAccountNo())
+                    .accountName(account.getAcctName())
+                    .accountType("Office")
+                    .currency(currency)
+                    .lcyBalance(lcyBalance)
+                    .fcyBalance(fcyBalance)
+                    .build());
         }
 
-        // Build FCY display string with actual amounts by currency
+        // Build FCY display string using original FCY amounts (not BDT)
         String fcyBalances = accountBalances.stream()
-                .filter(ab -> !LCY.equals(ab.getCurrency()))
+                .filter(ab -> !LCY.equals(ab.getCurrency()) && ab.getFcyBalance() != null)
                 .collect(Collectors.groupingBy(
                         AccountBalanceInfo::getCurrency,
-                        Collectors.reducing(BigDecimal.ZERO, AccountBalanceInfo::getLcyBalance, BigDecimal::add)))
+                        Collectors.reducing(BigDecimal.ZERO, AccountBalanceInfo::getFcyBalance, BigDecimal::add)))
                 .entrySet().stream()
                 .map(entry -> String.format("%s %,.2f", entry.getKey(), entry.getValue()))
                 .collect(Collectors.joining("; "));
@@ -375,11 +406,11 @@ public class SubProductGLReconciliationService {
             // Empty row
             rowNum++;
 
-            // Column headers - FIXED ORDER: FCY Amount BEFORE Total Account Balance
+            // Column headers
             Row headerRow = sheet.createRow(rowNum++);
-            String[] headers = {"Sub-Product Code", "Sub-Product Name", "GL Number", "GL Name", 
-                    "Account Count", "FCY Amount", "Total Account Balance (BDT)", 
-                    "GL Balance (BDT)", "Difference", "Status"};
+            String[] headers = {"Sub-Product Code", "Sub-Product Name", "GL Number", "GL Name",
+                    "Account Count", "Total Account Balance (FCY)", "Total Account Balance (LCY)",
+                    "Total GL Balance", "Difference", "Status"};
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
                 cell.setCellValue(headers[i]);
@@ -428,27 +459,23 @@ public class SubProductGLReconciliationService {
                 countCell.setCellValue(entry.getAccountCount());
                 countCell.setCellStyle(dataStyle);
 
-                // FCY Amount - NEW COLUMN BEFORE Total Account Balance
+                // Total Account Balance (FCY) — SUM(acc_bal) in original foreign currency
                 Cell fcyAmountCell = dataRow.createCell(colNum++);
-                if (entry.isFcyAccountsExist() && entry.getFcyAmount() != null && entry.getFcyAmount().compareTo(BigDecimal.ZERO) != 0) {
-                    String fcyDisplay = String.format("%s %,.2f", entry.getFcyCurrency(), entry.getFcyAmount());
-                    fcyAmountCell.setCellValue(fcyDisplay);
-                } else {
-                    fcyAmountCell.setCellValue("N/A");
-                }
-                fcyAmountCell.setCellStyle(dataStyle);
+                BigDecimal fcyAmt = entry.getFcyAmount() != null ? entry.getFcyAmount() : BigDecimal.ZERO;
+                fcyAmountCell.setCellValue(fcyAmt.doubleValue());
+                fcyAmountCell.setCellStyle(amountStyle);
 
-                // Total Account Balance (BDT) - EXPLICITLY LABELED
+                // Total Account Balance (LCY) — SUM(acc_bal_lcy) in BDT
                 Cell acctBalCell = dataRow.createCell(colNum++);
                 acctBalCell.setCellValue(entry.getTotalLCYBalance().doubleValue());
                 acctBalCell.setCellStyle(amountStyle);
 
-                // GL Balance (BDT) - EXPLICITLY LABELED
+                // Total GL Balance (BDT)
                 Cell glBalCell = dataRow.createCell(colNum++);
                 glBalCell.setCellValue(entry.getGlBalance().doubleValue());
                 glBalCell.setCellStyle(amountStyle);
 
-                // Difference - FORMULA: Total Account Balance (BDT) - GL Balance
+                // Difference = Total Account Balance (LCY) - Total GL Balance — both BDT
                 Cell diffCell = dataRow.createCell(colNum++);
                 diffCell.setCellValue(entry.getDifference().doubleValue());
                 diffCell.setCellStyle(amountStyle);
@@ -459,9 +486,7 @@ public class SubProductGLReconciliationService {
                 statusCell.setCellStyle(statusStyle);
 
                 // Accumulate totals
-                if (entry.isFcyAccountsExist() && entry.getFcyAmount() != null) {
-                    grandTotalFCYAmt = grandTotalFCYAmt.add(entry.getFcyAmount());
-                }
+                grandTotalFCYAmt = grandTotalFCYAmt.add(entry.getFcyAmount() != null ? entry.getFcyAmount() : BigDecimal.ZERO);
                 grandTotalAcctBal = grandTotalAcctBal.add(entry.getTotalLCYBalance());
                 grandTotalGLBal = grandTotalGLBal.add(entry.getGlBalance());
                 grandTotalDiff = grandTotalDiff.add(entry.getDifference());
@@ -487,23 +512,22 @@ public class SubProductGLReconciliationService {
             totalCountCell.setCellValue(totalAccounts);
             totalCountCell.setCellStyle(createBoldStyle(workbook));
 
-            // Total FCY Amount
+            // Total Account Balance (FCY) — numeric total
             Cell totalFCYCell = summaryRow.createCell(5);
-            if (grandTotalFCYAmt.compareTo(BigDecimal.ZERO) != 0) {
-                totalFCYCell.setCellValue(String.format("Total: %,.2f", grandTotalFCYAmt));
-            } else {
-                totalFCYCell.setCellValue("N/A");
-            }
-            totalFCYCell.setCellStyle(createBoldStyle(workbook));
+            totalFCYCell.setCellValue(grandTotalFCYAmt.doubleValue());
+            totalFCYCell.setCellStyle(createBoldAmountStyle(workbook));
 
+            // Total Account Balance (LCY) — BDT total
             Cell totalAcctCell = summaryRow.createCell(6);
             totalAcctCell.setCellValue(grandTotalAcctBal.doubleValue());
             totalAcctCell.setCellStyle(createBoldAmountStyle(workbook));
 
+            // Total GL Balance
             Cell totalGLCell = summaryRow.createCell(7);
             totalGLCell.setCellValue(grandTotalGLBal.doubleValue());
             totalGLCell.setCellStyle(createBoldAmountStyle(workbook));
 
+            // Total Difference = SUM(LCY) - SUM(GL Balance)
             Cell totalDiffCell = summaryRow.createCell(8);
             totalDiffCell.setCellValue(grandTotalDiff.doubleValue());
             totalDiffCell.setCellStyle(createBoldAmountStyle(workbook));
@@ -521,22 +545,22 @@ public class SubProductGLReconciliationService {
 
             Row note1Row = sheet.createRow(rowNum++);
             Cell note1Cell = note1Row.createCell(0);
-            note1Cell.setCellValue("• FCY Amount: Foreign currency amounts (USD, EUR, etc.) shown in original currency");
+            note1Cell.setCellValue("• Total Account Balance (FCY): Sum of account balances in original foreign currency (SUM of acc_bal)");
             note1Cell.setCellStyle(dataStyle);
 
             Row note2Row = sheet.createRow(rowNum++);
             Cell note2Cell = note2Row.createCell(0);
-            note2Cell.setCellValue("• Total Account Balance (BDT): Sum of all account balances under each sub-product in BDT/LCY");
+            note2Cell.setCellValue("• Total Account Balance (LCY): Sum of account balances converted to BDT (SUM of acc_bal_lcy)");
             note2Cell.setCellStyle(dataStyle);
 
             Row note3Row = sheet.createRow(rowNum++);
             Cell note3Cell = note3Row.createCell(0);
-            note3Cell.setCellValue("• GL Balance (BDT): Corresponding GL balance for the sub-product on the same date in BDT");
+            note3Cell.setCellValue("• Total GL Balance: Corresponding GL balance for the sub-product on the same date in BDT");
             note3Cell.setCellStyle(dataStyle);
 
             Row note4Row = sheet.createRow(rowNum++);
             Cell note4Cell = note4Row.createCell(0);
-            note4Cell.setCellValue("• Difference: Total Account Balance (BDT) - GL Balance (BDT)");
+            note4Cell.setCellValue("• Difference: Total Account Balance (LCY) - Total GL Balance  [both in BDT — currency-matched]");
             note4Cell.setCellStyle(dataStyle);
 
             Row note5Row = sheet.createRow(rowNum++);
@@ -697,7 +721,8 @@ public class SubProductGLReconciliationService {
         private String accountName;
         private String accountType;
         private String currency;
-        private BigDecimal lcyBalance;
+        private BigDecimal lcyBalance;   // always in BDT
+        private BigDecimal fcyBalance;   // original FCY amount (null for BDT accounts)
     }
 
     @lombok.Data

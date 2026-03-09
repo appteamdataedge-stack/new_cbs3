@@ -18,7 +18,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Service for GL Balance Reconciliation Report
@@ -122,45 +124,37 @@ public class GLReconciliationService {
     }
 
     /**
-     * Calculate total account balance for a subproduct
+     * Calculate total account balance for a subproduct.
+     * Uses set-based IN query — one DB round-trip instead of one per account.
      */
     private BigDecimal calculateTotalAccountBalance(SubProdMaster subProduct, LocalDate reportDate) {
-        BigDecimal total = BigDecimal.ZERO;
-
-        // Get customer accounts
         List<CustAcctMaster> customerAccounts = subProduct.getSubProductId() != null
                 ? custAcctMasterRepository.findBySubProductSubProductId(subProduct.getSubProductId())
                 : new ArrayList<>();
-
-        // Get office accounts
         List<OFAcctMaster> officeAccounts = subProduct.getSubProductId() != null
                 ? ofAcctMasterRepository.findBySubProductSubProductId(subProduct.getSubProductId())
                 : new ArrayList<>();
 
-        // Sum customer account balances
-        for (CustAcctMaster account : customerAccounts) {
-            Optional<AcctBal> balanceOpt = acctBalRepository.findByAccountNoAndTranDate(
-                    account.getAccountNo(), reportDate);
-            if (balanceOpt.isPresent()) {
-                BigDecimal balance = balanceOpt.get().getCurrentBalance();
-                if (balance != null) {
-                    total = total.add(balance);
-                }
-            }
+        List<String> allAccountNos = new ArrayList<>();
+        customerAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+        officeAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+
+        if (allAccountNos.isEmpty()) {
+            return BigDecimal.ZERO;
         }
 
-        // Sum office account balances
-        for (OFAcctMaster account : officeAccounts) {
-            Optional<AcctBal> balanceOpt = acctBalRepository.findByAccountNoAndTranDate(
-                    account.getAccountNo(), reportDate);
-            if (balanceOpt.isPresent()) {
-                BigDecimal balance = balanceOpt.get().getCurrentBalance();
-                if (balance != null) {
-                    total = total.add(balance);
-                }
-            }
-        }
+        // One query for all balances; look up in map — no per-account DB calls
+        Map<String, BigDecimal> balanceMap = acctBalRepository
+                .findByAccountNoInAndTranDate(allAccountNos, reportDate)
+                .stream()
+                .collect(Collectors.toMap(
+                        AcctBal::getAccountNo,
+                        ab -> ab.getCurrentBalance() != null ? ab.getCurrentBalance() : BigDecimal.ZERO));
 
+        BigDecimal total = BigDecimal.ZERO;
+        for (String accountNo : allAccountNos) {
+            total = total.add(balanceMap.getOrDefault(accountNo, BigDecimal.ZERO));
+        }
         return total;
     }
 
@@ -203,17 +197,29 @@ public class GLReconciliationService {
         List<AccountBalanceDetail> accountDetails = new ArrayList<>();
         BigDecimal totalAccountBalance = BigDecimal.ZERO;
 
-        // Customer accounts
+        // Fetch accounts
         List<CustAcctMaster> customerAccounts = custAcctMasterRepository
                 .findBySubProductSubProductId(subProduct.getSubProductId());
-        
+        List<OFAcctMaster> officeAccounts = ofAcctMasterRepository
+                .findBySubProductSubProductId(subProduct.getSubProductId());
+
+        // Collect all account numbers for one bulk balance fetch
+        List<String> allAccountNos = new ArrayList<>();
+        customerAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+        officeAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+
+        Map<String, BigDecimal> balanceMap = allAccountNos.isEmpty()
+                ? new java.util.HashMap<>()
+                : acctBalRepository.findByAccountNoInAndTranDate(allAccountNos, reportDate)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                AcctBal::getAccountNo,
+                                ab -> ab.getCurrentBalance() != null ? ab.getCurrentBalance() : BigDecimal.ZERO));
+
+        // Customer accounts — map lookup, no per-account DB calls
         for (CustAcctMaster account : customerAccounts) {
-            Optional<AcctBal> balanceOpt = acctBalRepository.findByAccountNoAndTranDate(
-                    account.getAccountNo(), reportDate);
-            
-            BigDecimal balance = balanceOpt.map(AcctBal::getCurrentBalance).orElse(BigDecimal.ZERO);
+            BigDecimal balance = balanceMap.getOrDefault(account.getAccountNo(), BigDecimal.ZERO);
             totalAccountBalance = totalAccountBalance.add(balance);
-            
             accountDetails.add(AccountBalanceDetail.builder()
                     .accountNo(account.getAccountNo())
                     .accountName(account.getAcctName())
@@ -222,17 +228,10 @@ public class GLReconciliationService {
                     .build());
         }
 
-        // Office accounts
-        List<OFAcctMaster> officeAccounts = ofAcctMasterRepository
-                .findBySubProductSubProductId(subProduct.getSubProductId());
-        
+        // Office accounts — map lookup, no per-account DB calls
         for (OFAcctMaster account : officeAccounts) {
-            Optional<AcctBal> balanceOpt = acctBalRepository.findByAccountNoAndTranDate(
-                    account.getAccountNo(), reportDate);
-            
-            BigDecimal balance = balanceOpt.map(AcctBal::getCurrentBalance).orElse(BigDecimal.ZERO);
+            BigDecimal balance = balanceMap.getOrDefault(account.getAccountNo(), BigDecimal.ZERO);
             totalAccountBalance = totalAccountBalance.add(balance);
-            
             accountDetails.add(AccountBalanceDetail.builder()
                     .accountNo(account.getAccountNo())
                     .accountName(account.getAcctName())
