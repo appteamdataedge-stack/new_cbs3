@@ -25,7 +25,7 @@ import { toast } from 'react-toastify';
 import { getAllCustomerAccounts } from '../../api/customerAccountService';
 import { getAllOfficeAccounts } from '../../api/officeAccountService';
 import { createTransaction, getAccountBalance, getAccountOverdraftStatus, getTransactionSystemDate } from '../../api/transactionService';
-import { getLatestExchangeRate } from '../../api/exchangeRateService';
+import { getExchangeRateByDateAndPair } from '../../api/exchangeRateService';
 import { FormSection, PageHeader } from '../../components/common';
 import type { CombinedAccountDTO, TransactionRequestDTO, AccountBalanceDTO } from '../../types';
 import { DrCrFlag } from '../../types';
@@ -276,7 +276,8 @@ const TransactionForm = () => {
       if (accountCurrency === 'USD') {
         setValue(`lines.${index}.tranCcy`, 'USD');
         try {
-          const exchangeRateData = await getLatestExchangeRate('USD/BDT');
+          const effectiveDate = systemDate || new Date().toISOString().split('T')[0];
+          const exchangeRateData = await getExchangeRateByDateAndPair(effectiveDate, 'USD/BDT');
           setExchangeRates(prev => new Map(prev).set(index, {
             midRate: exchangeRateData.midRate,
             buyingRate: exchangeRateData.buyingRate,
@@ -366,8 +367,9 @@ const TransactionForm = () => {
 
     if (currency === 'USD') {
       try {
-        // Fetch latest USD/BDT exchange rate
-        const exchangeRateData = await getLatestExchangeRate('USD/BDT');
+        // Fetch effective USD/BDT exchange rate on or before systemDate (same as backend save)
+        const effectiveDate = systemDate || new Date().toISOString().split('T')[0];
+        const exchangeRateData = await getExchangeRateByDateAndPair(effectiveDate, 'USD/BDT');
 
         // Store all rates for this line
         setExchangeRates(prev => new Map(prev).set(index, {
@@ -434,7 +436,8 @@ const TransactionForm = () => {
     const currency = watch(`lines.${index}.tranCcy`);
     if (currency === 'USD') {
       try {
-        const exchangeRateData = await getLatestExchangeRate('USD/BDT');
+        const effectiveDate = systemDate || new Date().toISOString().split('T')[0];
+        const exchangeRateData = await getExchangeRateByDateAndPair(effectiveDate, 'USD/BDT');
         let rate: number;
         let rateLabel: string;
 
@@ -563,21 +566,22 @@ const TransactionForm = () => {
       if (isAssetAccount && balance) {
         const accountCurrency = balance.accountCcy || 'BDT';
         const transactionAmount = accountCurrency === 'USD' ? line.fcyAmt : line.lcyAmt;
-        let resultingBalance = balance.computedBalance;
-        
+        const currentBal = balance.currentBalance ?? balance.computedBalance;
+        let resultingBalance = currentBal;
+
         // Calculate resulting balance after this transaction
         if (line.drCrFlag === DrCrFlag.D) {
           resultingBalance -= transactionAmount;
         } else {
           resultingBalance += transactionAmount;
         }
-        
+
         // Asset accounts cannot have positive balance (only for loan accounts - GL 21xxxx)
         const selectedAccount = allAccounts.find(acc => acc.accountNo === line.accountNo);
         const isLoanAccount = selectedAccount?.glNum?.startsWith('21');
-        
+
         if (isLoanAccount && resultingBalance > 0) {
-          toast.error(`Loan account ${line.accountNo} cannot have positive balance. Current: ${balance.computedBalance.toFixed(2)} ${accountCurrency}, Transaction: ${line.drCrFlag} ${transactionAmount.toFixed(2)} ${accountCurrency} would result in positive balance: ${resultingBalance.toFixed(2)} ${accountCurrency}. Loan accounts can only have zero or negative balances.`);
+          toast.error(`Loan account ${line.accountNo} cannot have positive balance. Current: ${currentBal.toFixed(2)} ${accountCurrency}, Transaction: ${line.drCrFlag} ${transactionAmount.toFixed(2)} ${accountCurrency} would result in positive balance: ${resultingBalance.toFixed(2)} ${accountCurrency}. Loan accounts can only have zero or negative balances.`);
           return;
         }
       }
@@ -627,7 +631,8 @@ const TransactionForm = () => {
       const isAsset = assetAccounts.get(`${index}`) ?? false;
       const isLiability = !isAsset;
       const line = data.lines[index];
-      return (isLiability && line.drCrFlag === DrCrFlag.D) || (isAsset && line.drCrFlag === DrCrFlag.C);
+      const isFcyAccount = (accountBalances.get(`${index}`)?.accountCcy ?? 'BDT') !== 'BDT';
+      return isFcyAccount && ((isLiability && line.drCrFlag === DrCrFlag.D) || (isAsset && line.drCrFlag === DrCrFlag.C));
     });
 
     // Guard: WAE must be available for settlement trigger legs only
@@ -636,6 +641,8 @@ const TransactionForm = () => {
       data.lines.forEach((line, index) => {
         const isAsset = assetAccounts.get(`${index}`) ?? false;
         const isLiability = !isAsset;
+        const isFcyAccount = (accountBalances.get(`${index}`)?.accountCcy ?? 'BDT') !== 'BDT';
+        if (!isFcyAccount) return;
         const needsWae = (isLiability && line.drCrFlag === DrCrFlag.D) || (isAsset && line.drCrFlag === DrCrFlag.C);
         if (needsWae) {
           const wae = accountBalances.get(`${index}`)?.wae;

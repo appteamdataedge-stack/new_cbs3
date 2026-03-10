@@ -21,6 +21,29 @@ export interface InterestCapitalizationResponse {
   message: string;
 }
 
+export interface CapitalizationPreview {
+  accountNo: string;
+  currency: string;
+  accruedFcy: number;
+  accruedLcy: number;
+  waeRate: number;
+  midRate: number;
+  /** Positive = gain, negative = loss */
+  estimatedGainLoss: number;
+}
+
+/**
+ * Get capitalization preview for an account (FCY breakdown, WAE, mid rate, estimated gain/loss)
+ */
+export const getCapitalizationPreview = async (
+  acctNum: string
+): Promise<CapitalizationPreview> => {
+  return apiRequest<CapitalizationPreview>({
+    method: 'GET',
+    url: `${INTEREST_CAP_ENDPOINT}/${acctNum}/preview`,
+  });
+};
+
 /**
  * Capitalize accrued interest for an account
  */

@@ -338,8 +338,13 @@ public class BalanceService {
             }
 
             if (storedWae != null) {
-                wae = storedWae;
-                log.debug("WAE for account {} from stored acc_bal.WAE_Rate: {}", accountNo, wae);
+                if (computedBalance.compareTo(BigDecimal.ZERO) == 0) {
+                    log.debug("WAE: FCY balance is zero for {} — ignoring stored WAE={}", accountNo, storedWae);
+                    // wae remains null so frontend shows N/A
+                } else {
+                    wae = storedWae;
+                    log.debug("WAE for account {} from stored acc_bal.WAE_Rate: {}", accountNo, wae);
+                }
             } else {
                 // Fallback 1: derive from summation columns (acc_bal + acc_bal_lcy)
                 BigDecimal ob  = currentDayBalance.getOpeningBal()  != null ? currentDayBalance.getOpeningBal()  : BigDecimal.ZERO;

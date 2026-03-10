@@ -9,6 +9,7 @@ com\example\moneymarket\service\ProductService.class
 com\example\moneymarket\service\SettlementAlertService$AlertSeverity.class
 com\example\moneymarket\service\BODValueDateService.class
 com\example\moneymarket\service\SubProductGLReconciliationService$AccountBalanceInfo.class
+com\example\moneymarket\dto\CapitalizationPreviewDTO$CapitalizationPreviewDTOBuilder.class
 com\example\moneymarket\entity\OFAcctMaster$OFAcctMasterBuilder.class
 com\example\moneymarket\entity\TranTable.class
 com\example\moneymarket\dto\OfficeAccountRequestDTO$OfficeAccountRequestDTOBuilder.class
@@ -44,6 +45,7 @@ com\example\moneymarket\service\SettlementAlertService$AlertThresholds.class
 com\example\moneymarket\dto\CustomerRequestDTO.class
 com\example\moneymarket\service\GLReconciliationService$AccountBalanceDetail.class
 com\example\moneymarket\dto\OfficeAccountRequestDTO.class
+com\example\moneymarket\dto\CapitalizationPreviewDTO.class
 com\example\moneymarket\service\GLReconciliationService$ReconciliationEntry$ReconciliationEntryBuilder.class
 com\example\moneymarket\repository\TxnHistAcctRepository.class
 com\example\moneymarket\entity\OFAcctMaster$AccountStatus.class

@@ -247,9 +247,14 @@ public class TransactionService {
                 .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
                 .map(t -> t.getLcyAmt() != null ? t.getLcyAmt() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (totalDrLcy.compareTo(totalCrLcy) != 0) {
+        BigDecimal lcyDiff = totalDrLcy.subtract(totalCrLcy).abs();
+        BigDecimal tolerance = new BigDecimal("0.01");
+        if (lcyDiff.compareTo(tolerance) > 0) {
             log.error("FCY settlement LCY imbalance: Total DR LCY={}, Total CR LCY={}. Transaction ID: {}", totalDrLcy, totalCrLcy, tranId);
             throw new BusinessException("Settlement gain/loss calculation error: total debit LCY (" + totalDrLcy + ") must equal total credit LCY (" + totalCrLcy + "). Please contact support.");
+        }
+        if (lcyDiff.compareTo(BigDecimal.ZERO) > 0) {
+            log.warn("Minor LCY rounding diff of {} BDT — within tolerance, Transaction ID: {}", lcyDiff, tranId);
         }
 
         // Save all transaction lines (legs + any settlement rows) in one transaction
@@ -942,8 +947,13 @@ public class TransactionService {
                 continue;
             }
 
-            // |mid − WAE| × FCY  (same formula for both trigger types; direction determines gain vs loss)
-            BigDecimal amount = mid.subtract(wae).abs().multiply(fcy).setScale(2, RoundingMode.HALF_UP);
+            // Gain/loss = difference of already-rounded leg LCY amounts.
+            // DO NOT use |mid-WAE|×FCY — independent rounding can cause a 0.01 drift vs the leg amounts.
+            BigDecimal legLcy = leg.getLcyAmt() != null
+                    ? leg.getLcyAmt()
+                    : fcy.multiply(wae).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal midLcy = fcy.multiply(mid).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal amount = legLcy.subtract(midLcy).abs();
             if (amount.compareTo(BigDecimal.ZERO) <= 0) continue;
 
             boolean isGain;

@@ -94,6 +94,7 @@ public class FinancialReportsService {
             glBalances = glBalanceRepository.findByTranDateAndGlNumIn(reportDate, activeGLNumbers);
         }
 
+        ensureFxGLsPresent(glBalances, reportDate);
         return generateTrialBalanceReportFromBalancesAsBytes(glBalances, reportDate);
     }
 
@@ -127,6 +128,8 @@ public class FinancialReportsService {
             log.warn("No GL balances found for Balance Sheet GLs on date: {}", reportDate);
             return createEmptyBalanceSheetAsBytes(reportDateStr);
         }
+
+        ensureFxGLsPresent(glBalances, reportDate);
 
         // Separate Liabilities and Assets
         List<GLBalance> liabilities = glBalances.stream()
@@ -442,6 +445,30 @@ public class FinancialReportsService {
      */
     private BigDecimal nvl(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    /**
+     * Ensure FX Gain/Loss GLs are present in the balance list.
+     * These GLs are posted by settlement and not linked to sub-products.
+     * If absent from gl_balance for the report date, add a zero-balance entry so they always appear.
+     */
+    private void ensureFxGLsPresent(List<GLBalance> glBalances, LocalDate date) {
+        Set<String> existing = glBalances.stream()
+                .map(GLBalance::getGlNum)
+                .collect(Collectors.toSet());
+        List.of("140203002", "240203002").forEach(glNum -> {
+            if (!existing.contains(glNum)) {
+                glBalances.add(GLBalance.builder()
+                        .glNum(glNum)
+                        .tranDate(date)
+                        .openingBal(BigDecimal.ZERO)
+                        .drSummation(BigDecimal.ZERO)
+                        .crSummation(BigDecimal.ZERO)
+                        .closingBal(BigDecimal.ZERO)
+                        .currentBalance(BigDecimal.ZERO)
+                        .build());
+            }
+        });
     }
 
     /**

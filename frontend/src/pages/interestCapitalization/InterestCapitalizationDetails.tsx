@@ -22,7 +22,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { getCustomerAccountByAccountNo } from '../../api/customerAccountService';
-import { capitalizeInterest } from '../../api/interestCapitalizationService';
+import { capitalizeInterest, getCapitalizationPreview } from '../../api/interestCapitalizationService';
 import { PageHeader, StatusBadge } from '../../components/common';
 
 const InterestCapitalizationDetails = () => {
@@ -45,6 +45,17 @@ const InterestCapitalizationDetails = () => {
     refetchOnMount: true,
     refetchOnWindowFocus: false,
     staleTime: 0,
+  });
+
+  // FCY preview (WAE, LCY breakdown, estimated gain/loss) — only fetched for non-BDT accounts
+  const isFcy = account?.accountCcy !== undefined && account?.accountCcy !== 'BDT';
+  const {
+    data: preview,
+  } = useQuery({
+    queryKey: ['capitalization-preview', accountNo],
+    queryFn: () => getCapitalizationPreview(accountNo || ''),
+    enabled: !!accountNo && isFcy,
+    staleTime: 30000,
   });
 
   // Capitalize interest mutation
@@ -346,6 +357,73 @@ const InterestCapitalizationDetails = () => {
           </Card>
         </Grid>
       </Grid>
+
+      {/* FCY Rate & Gain/Loss Preview — only shown for non-BDT accounts */}
+      {isFcy && preview && (
+        <Card variant="outlined" sx={{ mt: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              FCY Capitalization Details
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+            <Grid container spacing={2}>
+              <Grid item xs={6} md={3}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Accrued Balance (FCY)
+                </Typography>
+                <Typography variant="body1">
+                  {preview.accruedFcy?.toFixed(2)} {preview.currency}
+                </Typography>
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  WAE Rate
+                </Typography>
+                <Typography variant="body1">
+                  {preview.waeRate?.toFixed(4) ?? 'N/A'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Accrued Balance (LCY)
+                </Typography>
+                <Typography variant="body1">
+                  {preview.accruedLcy?.toFixed(2)} BDT
+                </Typography>
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Mid Rate
+                </Typography>
+                <Typography variant="body1">
+                  {preview.midRate?.toFixed(4)}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Estimated Gain/Loss on Capitalization
+                </Typography>
+                <Typography
+                  variant="body1"
+                  color={
+                    (preview.estimatedGainLoss ?? 0) > 0
+                      ? 'success.main'
+                      : (preview.estimatedGainLoss ?? 0) < 0
+                      ? 'error.main'
+                      : 'text.primary'
+                  }
+                >
+                  {(preview.estimatedGainLoss ?? 0) > 0
+                    ? `+${preview.estimatedGainLoss.toFixed(2)} BDT (Gain)`
+                    : (preview.estimatedGainLoss ?? 0) < 0
+                    ? `${preview.estimatedGainLoss.toFixed(2)} BDT (Loss)`
+                    : '0.00 BDT (No Gain/Loss)'}
+                </Typography>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Action Buttons */}
       {canProceed && (

@@ -39,7 +39,10 @@
       "Bash(mvn compile:*)",
       "Bash(git:*)",
       "Bash(npx tsc:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(do sleep:*)",
+      "Bash(timeout 60 mvn spring-boot:run:*)",
+      "Bash(timeout 55 mvn spring-boot:run:*)"
     ]
   }
 }

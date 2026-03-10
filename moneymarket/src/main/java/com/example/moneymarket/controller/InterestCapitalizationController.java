@@ -1,5 +1,6 @@
 package com.example.moneymarket.controller;
 
+import com.example.moneymarket.dto.CapitalizationPreviewDTO;
 import com.example.moneymarket.dto.InterestCapitalizationRequestDTO;
 import com.example.moneymarket.dto.InterestCapitalizationResponseDTO;
 import com.example.moneymarket.service.InterestCapitalizationService;
@@ -23,8 +24,17 @@ public class InterestCapitalizationController {
     private final InterestCapitalizationService interestCapitalizationService;
 
     /**
+     * Preview capitalization details for an account (FCY: WAE, LCY breakdown, estimated gain/loss).
+     */
+    @GetMapping("/{acctNum}/preview")
+    public ResponseEntity<CapitalizationPreviewDTO> getCapitalizationPreview(
+            @PathVariable String acctNum) {
+        return ResponseEntity.ok(interestCapitalizationService.getCapitalizationPreview(acctNum));
+    }
+
+    /**
      * Capitalize accrued interest for an account
-     * 
+     *
      * @param request The capitalization request
      * @param bindingResult Validation result
      * @return The capitalization response

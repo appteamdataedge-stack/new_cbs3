@@ -267,24 +267,28 @@ public class TransactionValidationService {
             }
             
             // CREDIT: Only allow if resulting balance <= 0 (cannot go positive)
+            // Use currentBalance (updated at each posting) instead of availableBalance
+            // to avoid false rejections when EOD has not run yet for the day.
             if (drCrFlag == DrCrFlag.C) {
-                if (resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal currentBal = balance.getCurrentBalance();
+                BigDecimal resultingFromCurrent = currentBal.add(amount);
+                if (resultingFromCurrent.compareTo(BigDecimal.ZERO) > 0) {
                     log.warn("Office Asset Account {} (GL: {}) - CREDIT REJECTED. " +
-                            "Available: {} {}, Credit: {} {}, Resulting: {} {}. " +
-                            "Office Asset Accounts cannot have positive balances.", 
-                            accountNo, glNum, availableBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
-                    
+                            "Current: {} {}, Credit: {} {}, Resulting: {} {}. " +
+                            "Office Asset Accounts cannot have positive balances.",
+                            accountNo, glNum, currentBal, accountCurrency, amount, accountCurrency, resultingFromCurrent, accountCurrency);
+
                     throw new BusinessException(
                         String.format("Credit rejected for Office Asset Account %s (GL: %s). " +
-                                    "Available balance: %.2f %s, Credit amount: %.2f %s, Resulting balance: %.2f %s. " +
+                                    "Current balance: %.2f %s, Credit amount: %.2f %s, Resulting balance: %.2f %s. " +
                                     "Office Asset Accounts can only be credited up to zero balance. Cannot have positive balances.",
-                                    accountNo, glNum, availableBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency)
+                                    accountNo, glNum, currentBal, accountCurrency, amount, accountCurrency, resultingFromCurrent, accountCurrency)
                     );
                 }
-                
+
                 log.info("Office Asset Account {} (GL: {}) - CREDIT transaction allowed. " +
-                        "Available: {} {}, Credit: {} {}, Resulting: {} {} (at or below zero)", 
-                        accountNo, glNum, availableBalance, accountCurrency, amount, accountCurrency, resultingBalance, accountCurrency);
+                        "Current: {} {}, Credit: {} {}, Resulting: {} {} (at or below zero)",
+                        accountNo, glNum, currentBal, accountCurrency, amount, accountCurrency, resultingFromCurrent, accountCurrency);
                 return true;
             }
         }

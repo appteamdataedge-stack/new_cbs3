@@ -158,4 +158,21 @@ public interface InttAccrTranRepository extends JpaRepository<InttAccrTran, Stri
      * Find all transactions for a specific account and accrual date (for debugging)
      */
     List<InttAccrTran> findByAccountNoAndAccrualDate(String accountNo, LocalDate accrualDate);
+
+    /**
+     * Find pending accrual records for a specific account and currency.
+     * Used to calculate WAE on-the-fly for FCY interest capitalization.
+     */
+    List<InttAccrTran> findByAccountNoAndTranCcyAndStatus(String accountNo, String tranCcy, AccrualStatus status);
+
+    /**
+     * Find all S-type (daily accrual) credit entries for an account and currency.
+     * Used to calculate the blended WAE across all un-capitalized accrual periods.
+     * Filters to accr_tran_id LIKE 'S%' and dr_cr_flag = C to exclude capitalization debits.
+     */
+    @Query("SELECT i FROM InttAccrTran i WHERE i.accountNo = :accountNo AND i.tranCcy = :tranCcy " +
+           "AND i.drCrFlag = com.example.moneymarket.entity.TranTable$DrCrFlag.C " +
+           "AND i.accrTranId LIKE 'S%'")
+    List<InttAccrTran> findCreditAccrualsByAccountAndCcy(@Param("accountNo") String accountNo,
+                                                          @Param("tranCcy") String tranCcy);
 }

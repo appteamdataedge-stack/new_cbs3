@@ -86,6 +86,13 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
             FROM sub_prod_master sp
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_income_payable_gl_num IS NOT NULL
+
+            UNION
+
+            -- Always include FX Gain/Loss GLs (posted by settlement, not linked to sub-products)
+            SELECT '140203002'
+            UNION
+            SELECT '240203002'
         )
         ORDER BY gl.GL_Num COLLATE utf8mb4_unicode_ci
         """, nativeQuery = true)
@@ -153,6 +160,13 @@ public interface GLSetupRepository extends JpaRepository<GLSetup, String> {
             INNER JOIN of_acct_master oa ON oa.Sub_Product_Id = sp.Sub_Product_Id
             WHERE sp.interest_income_payable_gl_num IS NOT NULL
             AND (sp.interest_income_payable_gl_num LIKE '1%' OR sp.interest_income_payable_gl_num LIKE '2%')
+
+            UNION
+
+            -- Always include FX Gain/Loss GLs (posted by settlement, not linked to sub-products)
+            SELECT '140203002'
+            UNION
+            SELECT '240203002'
         )
         AND (gl.GL_Num LIKE '1%' OR gl.GL_Num LIKE '2%')
         ORDER BY gl.GL_Num COLLATE utf8mb4_unicode_ci

@@ -270,9 +270,9 @@ public class ExchangeRateService {
     public ExchangeRateResponse getExchangeRateByDateAndPair(LocalDate date, String ccyPair) {
         log.info("Fetching exchange rate for {} on {}", ccyPair, date);
 
-        FxRateMaster fxRate = fxRateMasterRepository.findByCcyPairAndRateDate(ccyPair, date)
+        FxRateMaster fxRate = fxRateMasterRepository.findLatestByCcyPairAndDate(ccyPair, date)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No exchange rate found for " + ccyPair + " on " + date));
+                        "No exchange rate found for " + ccyPair + " on or before " + date));
 
         return mapToResponse(fxRate);
     }

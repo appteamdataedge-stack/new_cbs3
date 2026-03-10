@@ -98,6 +98,7 @@ public class EODStep8ConsolidatedReportService {
                 ? glBalanceRepository.findByTranDate(eodDate)
                 : glBalanceRepository.findByTranDateAndGlNumIn(eodDate, activeGLNumbers);
 
+        ensureFxGLsPresent(glBalances, eodDate);
         glBalances.sort(Comparator.comparing(GLBalance::getGlNum));
 
         CellStyle headerStyle = createHeaderStyle(workbook);
@@ -179,6 +180,8 @@ public class EODStep8ConsolidatedReportService {
         List<GLBalance> glBalances = balanceSheetGLs.isEmpty()
                 ? new ArrayList<>()
                 : glBalanceRepository.findByTranDateAndGlNumIn(eodDate, balanceSheetGLs);
+
+        ensureFxGLsPresent(glBalances, eodDate);
 
         List<GLBalance> liabilities = glBalances.stream()
                 .filter(gl -> gl.getGlNum().startsWith("1"))
@@ -825,6 +828,30 @@ public class EODStep8ConsolidatedReportService {
 
     private BigDecimal nvl(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    /**
+     * Ensure FX Gain/Loss GLs are present in the balance list.
+     * These GLs are posted by settlement and not linked to sub-products.
+     * If absent from gl_balance for the report date, add a zero-balance entry so they always appear.
+     */
+    private void ensureFxGLsPresent(List<GLBalance> glBalances, LocalDate date) {
+        Set<String> existing = glBalances.stream()
+                .map(GLBalance::getGlNum)
+                .collect(Collectors.toSet());
+        List.of("140203002", "240203002").forEach(glNum -> {
+            if (!existing.contains(glNum)) {
+                glBalances.add(GLBalance.builder()
+                        .glNum(glNum)
+                        .tranDate(date)
+                        .openingBal(BigDecimal.ZERO)
+                        .drSummation(BigDecimal.ZERO)
+                        .crSummation(BigDecimal.ZERO)
+                        .closingBal(BigDecimal.ZERO)
+                        .currentBalance(BigDecimal.ZERO)
+                        .build());
+            }
+        });
     }
 
     private CellStyle createHeaderStyle(Workbook workbook) {
