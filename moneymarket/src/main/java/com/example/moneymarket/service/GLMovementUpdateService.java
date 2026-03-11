@@ -121,21 +121,20 @@ public class GLMovementUpdateService {
     private void processTransaction(TranTable transaction, LocalDate systemDate) {
         String accountNo = transaction.getAccountNo();
 
-        if (accountNo == null || accountNo.trim().isEmpty()) {
-            throw new BusinessException("Account Number is missing for transaction: " + transaction.getTranId());
-        }
-
         // Primary path: use GL_Num stored on the transaction row (populated at insert time).
+        // FX gain/loss rows have accountNo=null with glNum set directly (140203002 / 240203002).
         // Fallback: look up from account-master tables for rows that pre-date V30 or were
         //           inserted by services that do not yet set GL_Num.
         String glNum;
         if (transaction.getGlNum() != null && !transaction.getGlNum().trim().isEmpty()) {
             glNum = transaction.getGlNum();
             log.debug("Transaction {}: using GL_Num from tran_table -> {}", transaction.getTranId(), glNum);
-        } else {
+        } else if (accountNo != null && !accountNo.trim().isEmpty()) {
             glNum = getGLNumberForAccount(accountNo);
             log.warn("Transaction {}: GL_Num not set on tran_table row, fell back to account-master lookup -> {}",
                     transaction.getTranId(), glNum);
+        } else {
+            throw new BusinessException("Both Account Number and GL_Num are missing for transaction: " + transaction.getTranId());
         }
 
         // Look up GL_Setup record

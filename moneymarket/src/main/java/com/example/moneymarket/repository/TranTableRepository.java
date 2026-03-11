@@ -98,6 +98,12 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
     List<TranTable> findByAccountNoAndTranDate(String accountNo, LocalDate tranDate);
 
     /**
+     * Find all transactions for a set of account numbers on a specific date.
+     * Used by EOD Step 8 to build per-subproduct transaction detail sheets.
+     */
+    List<TranTable> findByAccountNoInAndTranDate(java.util.Collection<String> accountNos, LocalDate tranDate);
+
+    /**
      * Find transactions with value date gap (Tran_Date > Value_Date)
      * Used by Batch Job 1 to calculate value date interest
      *
