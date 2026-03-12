@@ -51,6 +51,9 @@ class EODStep8ConsolidatedReportServiceTest {
     private AcctBalLcyRepository acctBalLcyRepository;
 
     @Mock
+    private TranTableRepository tranTableRepository;
+
+    @Mock
     private SystemDateService systemDateService;
 
     @InjectMocks
@@ -289,7 +292,7 @@ class EODStep8ConsolidatedReportServiceTest {
         EODStep8ConsolidatedReportService service = new EODStep8ConsolidatedReportService(
                 glBalanceRepository, glSetupRepository, subProdMasterRepository,
                 custAcctMasterRepository, ofAcctMasterRepository, acctBalRepository,
-                acctBalLcyRepository, systemDateService);
+                acctBalLcyRepository, tranTableRepository, systemDateService);
 
         String result = service.truncateSheetName(longName);
         

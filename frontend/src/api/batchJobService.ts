@@ -163,6 +163,40 @@ export const downloadSubproductGLBalance = async (reportDate: string): Promise<v
 };
 
 /**
+ * Download EOD Step 8 Consolidated Report (single Excel workbook with all sheets)
+ */
+export const downloadConsolidatedReport = async (eodDate: string): Promise<void> => {
+  try {
+    const response = await apiRequest<Blob>({
+      method: 'POST',
+      url: '/eod-step8/generate-consolidated-report',
+      params: { eodDate },
+      responseType: 'blob'
+    });
+
+    // Create blob from response
+    const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `EOD_Step8_Consolidated_Report_${eodDate}.xlsx`;
+
+    // Trigger download
+    document.body.appendChild(link);
+    link.click();
+
+    // Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Failed to download Consolidated Report:', error);
+    throw error;
+  }
+};
+
+/**
  * Error handler for batch job operations
  */
 export const handleBatchJobError = (error: any): string => {

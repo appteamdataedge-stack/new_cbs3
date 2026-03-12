@@ -326,69 +326,25 @@ public class BalanceService {
 
         BigDecimal currentBalanceLcy = computedBalanceLcy;
 
-        // WAE — primary source: stored acc_bal.WAE_Rate (updated at each FCY credit posting).
-        // Fallback: compute from acc_bal + acc_bal_lcy summations (EOD-confirmed data).
+        // WAE — Compute dynamically from real-time balance data for transaction UI display.
+        // Formula: WAE = Total LCY / Total FCY
+        // Where Total FCY = Previous Day Opening FCY + Today's Credits FCY - Today's Debits FCY
+        //       Total LCY = Previous Day Opening LCY + Today's Credits LCY - Today's Debits LCY
         BigDecimal wae = null;
         if (!"BDT".equalsIgnoreCase(accountCcy)) {
-            // Primary: read stored WAE from the latest acc_bal record (real-time, updated at posting)
-            BigDecimal storedWae = currentDayBalance.getWaeRate();
-            if (storedWae == null) {
-                // Try most recent historical record that has a non-null WAE_Rate
-                storedWae = acctBalRepository.findLatestWaeRate(accountNo).orElse(null);
-            }
-
-            if (storedWae != null) {
-                if (computedBalance.compareTo(BigDecimal.ZERO) == 0) {
-                    log.debug("WAE: FCY balance is zero for {} — ignoring stored WAE={}", accountNo, storedWae);
-                    // wae remains null so frontend shows N/A
-                } else {
-                    wae = storedWae;
-                    log.debug("WAE for account {} from stored acc_bal.WAE_Rate: {}", accountNo, wae);
-                }
+            // Always compute WAE from real-time balance data (previously computed above)
+            // computedBalance = previousDayOpeningBalance + dateCredits - dateDebits (FCY)
+            // computedBalanceLcy = previousDayOpeningBalanceLcy + dateCreditsLcy - dateDebitsLcy (LCY)
+            
+            if (computedBalance.compareTo(BigDecimal.ZERO) == 0) {
+                // FCY balance is zero — WAE is undefined (show N/A in UI)
+                log.debug("WAE: FCY balance is zero for {} — WAE is N/A", accountNo);
+                wae = null;
             } else {
-                // Fallback 1: derive from summation columns (acc_bal + acc_bal_lcy)
-                BigDecimal ob  = currentDayBalance.getOpeningBal()  != null ? currentDayBalance.getOpeningBal()  : BigDecimal.ZERO;
-                BigDecimal dr  = currentDayBalance.getDrSummation() != null ? currentDayBalance.getDrSummation() : BigDecimal.ZERO;
-                BigDecimal cr  = currentDayBalance.getCrSummation() != null ? currentDayBalance.getCrSummation() : BigDecimal.ZERO;
-                BigDecimal waeFcyBase = ob.add(cr).subtract(dr);
-                BigDecimal waeLcyBase = null;
-                if (currentDayLcyBalance.isPresent()) {
-                    AcctBalLcy lcy = currentDayLcyBalance.get();
-                    BigDecimal obLcy = lcy.getOpeningBalLcy()   != null ? lcy.getOpeningBalLcy()   : BigDecimal.ZERO;
-                    BigDecimal drLcy = lcy.getDrSummationLcy()  != null ? lcy.getDrSummationLcy()  : BigDecimal.ZERO;
-                    BigDecimal crLcy = lcy.getCrSummationLcy()  != null ? lcy.getCrSummationLcy()  : BigDecimal.ZERO;
-                    waeLcyBase = obLcy.add(crLcy).subtract(drLcy);
-                }
-                wae = calculateWae(accountCcy, waeLcyBase, waeFcyBase, systemDate);
-
-                // Fallback 2 (last resort): if acc_bal_lcy is missing or produced null WAE,
-                // compute from real-time balances already calculated in this method:
-                //   FCY balance = currentDayBalance.getCurrentBalance()  (updated at each posting)
-                //   LCY balance = computedBalanceLcy  (previousDayOpeningLcy + todayCreditsLcy - todayDebitsLcy)
-                if (wae == null) {
-                    // Fallback 2: scan acc_bal_lcy records newest-first and find the most recent date where
-                    // BOTH acc_bal.Closing_Bal != 0 AND acc_bal_lcy.Closing_Bal_lcy != 0.
-                    // Using Closing_Bal (EOD snapshot) rather than Current_Balance avoids stale intra-day
-                    // values that result from real-time debits after the last LCY snapshot was written.
-                    List<AcctBalLcy> lcyHistory = acctBalLcyRepository.findByAccountNoOrderByTranDateDesc(accountNo);
-                    for (AcctBalLcy lcyRecord : lcyHistory) {
-                        BigDecimal lcyClosing = lcyRecord.getClosingBalLcy();
-                        if (lcyClosing == null || lcyClosing.compareTo(BigDecimal.ZERO) == 0) continue;
-                        Optional<AcctBal> matchedAcctBal = acctBalRepository.findByAccountNoAndTranDate(
-                                accountNo, lcyRecord.getTranDate());
-                        if (matchedAcctBal.isPresent()) {
-                            BigDecimal fcyClosing = matchedAcctBal.get().getClosingBal();
-                            if (fcyClosing != null && fcyClosing.compareTo(BigDecimal.ZERO) != 0) {
-                                wae = lcyClosing.abs().divide(fcyClosing.abs(), 4, RoundingMode.HALF_UP);
-                                log.debug("WAE for account {} from historical EOD snapshot (date={}): FCY={}, LCY={}, WAE={}",
-                                        accountNo, lcyRecord.getTranDate(), fcyClosing, lcyClosing, wae);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    log.debug("WAE for account {} from summation fallback: {}", accountNo, wae);
-                }
+                // Compute WAE directly from real-time balances
+                wae = computedBalanceLcy.abs().divide(computedBalance.abs(), 4, RoundingMode.HALF_UP);
+                log.debug("WAE for account {} computed from real-time balances: Total LCY={}, Total FCY={}, WAE={}",
+                        accountNo, computedBalanceLcy, computedBalance, wae);
             }
         }
 
@@ -434,27 +390,6 @@ public class BalanceService {
 
         BigDecimal lastClosingBalLcy = balances.get(0).getClosingBalLcy();
         return lastClosingBalLcy != null ? lastClosingBalLcy : BigDecimal.ZERO;
-    }
-
-    /**
-     * Calculate WAE (Weighted Average Exchange Rate) for FCY accounts from acc_bal-derived balances only.
-     * Formula: WAE = computedBalanceLcy / computedBalanceFCY (4 decimal places).
-     * Source: acc_bal (prev day closing + today CR - today DR) — never from fx_rates/exchange_rate table.
-     * When FCY balance is zero, returns null (do not fall back to mid rate, so UI can show WAE vs Mid separately).
-     */
-    private BigDecimal calculateWae(String accountCcy, BigDecimal computedBalanceLcy, BigDecimal computedBalanceFcy, LocalDate systemDate) {
-        if (accountCcy == null || "BDT".equalsIgnoreCase(accountCcy)) {
-            return null;
-        }
-        if (computedBalanceLcy == null || computedBalanceFcy == null) {
-            return null;
-        }
-        if (computedBalanceFcy.compareTo(BigDecimal.ZERO) == 0) {
-            log.debug("WAE: FCY balance is zero for {} — returning null (no mid-rate fallback)", accountCcy);
-            return null;
-        }
-        return computedBalanceLcy.abs()
-                .divide(computedBalanceFcy.abs(), 4, RoundingMode.HALF_UP);
     }
 
     /**

@@ -39,6 +39,7 @@ import {
   downloadTrialBalance,
   downloadBalanceSheet,
   downloadSubproductGLBalance,
+  downloadConsolidatedReport,
   handleBatchJobError
 } from '../../api/batchJobService';
 
@@ -259,7 +260,7 @@ const EOD = () => {
   const handleBatchJob8 = async () => {
     try {
       // Step 1: Set loading state
-      setDownloadProgress('Generating reports...');
+      setDownloadProgress('Generating consolidated report...');
 
       // Step 2: Execute batch job through the standard EOD job management system
       const result = await executeEODJob(8, 'ADMIN');
@@ -268,27 +269,13 @@ const EOD = () => {
         throw new Error(result.message || 'Failed to generate reports');
       }
 
-      // Step 3: Download Trial Balance
-      setDownloadProgress('Downloading Trial Balance...');
-      // Get the system date from job statuses (format: YYYYMMDD)
-      const systemDateStr = systemDate.replace(/-/g, '');
-      await downloadTrialBalance(systemDateStr);
+      // Step 3: Download the consolidated Excel workbook (single file with all sheets)
+      setDownloadProgress('Downloading consolidated report...');
+      await downloadConsolidatedReport(systemDate);
 
-      // Step 4: Wait 1 second then download Balance Sheet
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setDownloadProgress('Downloading Balance Sheet...');
-      await downloadBalanceSheet(systemDateStr);
-
-      // Step 5: Wait 1 second then download Subproduct GL Balance Report
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setDownloadProgress('Downloading Subproduct GL Balance Report...');
-      await downloadSubproductGLBalance(systemDateStr);
-
-      // Step 6: Show success message
+      // Step 4: Show success message
       setDownloadProgress('');
-      toast.success('All financial reports generated and downloaded successfully (3 reports)');
+      toast.success('EOD Step 8 Consolidated Report downloaded successfully (1 Excel file with multiple sheets)');
 
       // Refresh job statuses
       await refreshJobStatuses();

@@ -73,7 +73,11 @@ public class EODStep8ConsolidatedReportService {
             log.info("Generating Sheet 3: Subproduct GL Balance Report");
             int subproductSheetIndex = generateSubproductGLBalanceSheet(workbook, eodDate);
 
-            // Sheets 4+: Account Balance Report (one sheet per subproduct)
+            // Sheet 4: Account Balance Report (all accounts in one sheet)
+            log.info("Generating Sheet 4: Account Balance Report");
+            generateAccountBalanceReport(workbook, eodDate);
+
+            // Sheets 5+: Account Balance Report (one sheet per subproduct)
             log.info("Generating Account Balance Report sheets (one per subproduct)");
             generateAccountBalanceSheets(workbook, eodDate, subproductSheetIndex);
 
@@ -286,7 +290,7 @@ public class EODStep8ConsolidatedReportService {
     }
 
     /**
-     * Sheet 3: Subproduct GL Balance Report (with hyperlinks to detail sheets)
+     * Sheet 3: Subproduct GL Balance Report (flat table with status column)
      * Returns the sheet index for reference
      */
     private int generateSubproductGLBalanceSheet(XSSFWorkbook workbook, LocalDate eodDate) {
@@ -303,7 +307,6 @@ public class EODStep8ConsolidatedReportService {
 
         CellStyle headerStyle = createHeaderStyle(workbook);
         CellStyle columnHeaderStyle = createColumnHeaderStyle(workbook);
-        CellStyle sectionHeaderStyle = createSectionHeaderStyle(workbook);
         CellStyle dataStyle = createDataStyle(workbook);
         CellStyle numberStyle = createNumberStyle(workbook);
         CellStyle totalStyle = createBoldStyle(workbook);
@@ -315,156 +318,227 @@ public class EODStep8ConsolidatedReportService {
         Cell titleCell = titleRow.createCell(0);
         titleCell.setCellValue("SUBPRODUCT GL BALANCE REPORT - " + eodDate.format(DATE_FORMATTER));
         titleCell.setCellStyle(headerStyle);
-        sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 8));
+        sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 10));
 
         rowNum++;
 
         Row headerRow = sheet.createRow(rowNum++);
-        String[] headers = {"Subproduct Code", "Subproduct Name", "GL Number", "GL Name",
-                "Account Count", "FCY Account Balance", "LCY Account Balance", "GL Balance", "Detail"};
+        String[] headers = {"Sub Product Code", "Sub Product Name", "GL Number", "GL Name",
+                "Account Count", "Total Account Balance (FCY)", "Total Account Balance (LCY)", 
+                "Total GL Balance", "Difference", "Status", "Detail"};
         for (int i = 0; i < headers.length; i++) {
             Cell cell = headerRow.createCell(i);
             cell.setCellValue(headers[i]);
             cell.setCellStyle(columnHeaderStyle);
         }
 
-        Map<String, List<SubproductBalanceData>> bdtAndFcyGroups = reportData.stream()
-                .collect(Collectors.groupingBy(d -> d.isFcyAccountsExist() ? "FCY" : "BDT"));
+        BigDecimal totalAccountBalanceFCY = BigDecimal.ZERO;
+        BigDecimal totalAccountBalanceLCY = BigDecimal.ZERO;
+        BigDecimal totalGLBalance = BigDecimal.ZERO;
+        long totalAccountCount = 0;
+        int matchedCount = 0;
+        int mismatchedCount = 0;
 
-        List<SubproductBalanceData> bdtGroup = bdtAndFcyGroups.getOrDefault("BDT", new ArrayList<>());
-        List<SubproductBalanceData> fcyGroup = bdtAndFcyGroups.getOrDefault("FCY", new ArrayList<>());
-
-        int bdtSectionStartRow = rowNum;
-        if (!bdtGroup.isEmpty()) {
-            Row bdtSectionRow = sheet.createRow(rowNum++);
-            Cell bdtSectionCell = bdtSectionRow.createCell(0);
-            bdtSectionCell.setCellValue("=== BDT ACCOUNTS ===");
-            bdtSectionCell.setCellStyle(sectionHeaderStyle);
-
-            Map<String, List<SubproductBalanceData>> bdtByGL = bdtGroup.stream()
-                    .collect(Collectors.groupingBy(SubproductBalanceData::getGlNum));
-
-            for (Map.Entry<String, List<SubproductBalanceData>> glEntry : bdtByGL.entrySet()) {
-                BigDecimal glSubtotal = BigDecimal.ZERO;
-
-                for (SubproductBalanceData data : glEntry.getValue()) {
-                    Row row = sheet.createRow(rowNum++);
-                    createStyledCell(row, 0, data.getSubProductCode(), dataStyle);
-
-                    Cell nameCell = row.createCell(1);
-                    nameCell.setCellValue(data.getSubProductName());
-                    nameCell.setCellStyle(hyperlinkStyle);
-                    addHyperlinkToSheet(workbook, nameCell, data.getSubProductName());
-
-                    createStyledCell(row, 2, data.getGlNum(), dataStyle);
-                    createStyledCell(row, 3, data.getGlName(), dataStyle);
-                    createStyledNumericCell(row, 4, new BigDecimal(data.getAccountCount()), dataStyle);
-                    createStyledCell(row, 5, "N/A", dataStyle);
-                    createStyledNumericCell(row, 6, data.getTotalLCYBalance(), numberStyle);
-                    createStyledNumericCell(row, 7, data.getGlBalance(), numberStyle);
-
-                    Cell detailCell = row.createCell(8);
-                    detailCell.setCellValue("View Detail \u2192");
-                    detailCell.setCellStyle(hyperlinkStyle);
-                    addHyperlinkToSheet(workbook, detailCell, data.getSubProductName());
-
-                    glSubtotal = glSubtotal.add(data.getTotalLCYBalance());
-                }
-
-                Row subtotalRow = sheet.createRow(rowNum++);
-                createStyledCell(subtotalRow, 5, "GL Subtotal:", totalStyle);
-                createStyledNumericCell(subtotalRow, 6, glSubtotal, totalStyle);
-            }
-
-            BigDecimal bdtGrandTotal = bdtGroup.stream()
-                    .map(SubproductBalanceData::getTotalLCYBalance)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            Row bdtTotalRow = sheet.createRow(rowNum++);
-            createStyledCell(bdtTotalRow, 5, "BDT Grand Total:", totalStyle);
-            createStyledNumericCell(bdtTotalRow, 6, bdtGrandTotal, totalStyle);
+        for (SubproductBalanceData data : reportData) {
+            Row row = sheet.createRow(rowNum++);
             
-            rowNum++;
-        }
-
-        if (!fcyGroup.isEmpty()) {
-            Row fcySectionRow = sheet.createRow(rowNum++);
-            Cell fcySectionCell = fcySectionRow.createCell(0);
-            fcySectionCell.setCellValue("=== FCY ACCOUNTS ===");
-            fcySectionCell.setCellStyle(sectionHeaderStyle);
-
-            Map<String, List<SubproductBalanceData>> fcyByGL = fcyGroup.stream()
-                    .collect(Collectors.groupingBy(SubproductBalanceData::getGlNum));
-
-            for (Map.Entry<String, List<SubproductBalanceData>> glEntry : fcyByGL.entrySet()) {
-                BigDecimal glSubtotalFCY = BigDecimal.ZERO;
-                BigDecimal glSubtotalLCY = BigDecimal.ZERO;
-
-                for (SubproductBalanceData data : glEntry.getValue()) {
-                    Row row = sheet.createRow(rowNum++);
-                    createStyledCell(row, 0, data.getSubProductCode(), dataStyle);
-
-                    Cell nameCell = row.createCell(1);
-                    nameCell.setCellValue(data.getSubProductName());
-                    nameCell.setCellStyle(hyperlinkStyle);
-                    addHyperlinkToSheet(workbook, nameCell, data.getSubProductName());
-
-                    createStyledCell(row, 2, data.getGlNum(), dataStyle);
-                    createStyledCell(row, 3, data.getGlName(), dataStyle);
-                    createStyledNumericCell(row, 4, new BigDecimal(data.getAccountCount()), dataStyle);
-                    createStyledNumericCell(row, 5, data.getTotalFCYAmount(), numberStyle);
-                    createStyledNumericCell(row, 6, data.getTotalLCYBalance(), numberStyle);
-                    createStyledNumericCell(row, 7, data.getGlBalance(), numberStyle);
-
-                    Cell detailCell = row.createCell(8);
-                    detailCell.setCellValue("View Detail \u2192");
-                    detailCell.setCellStyle(hyperlinkStyle);
-                    addHyperlinkToSheet(workbook, detailCell, data.getSubProductName());
-
-                    glSubtotalFCY = glSubtotalFCY.add(data.getTotalFCYAmount());
-                    glSubtotalLCY = glSubtotalLCY.add(data.getTotalLCYBalance());
-                }
-
-                Row subtotalRow = sheet.createRow(rowNum++);
-                createStyledCell(subtotalRow, 4, "GL Subtotal:", totalStyle);
-                createStyledNumericCell(subtotalRow, 5, glSubtotalFCY, totalStyle);
-                createStyledNumericCell(subtotalRow, 6, glSubtotalLCY, totalStyle);
+            BigDecimal difference = data.getTotalLCYBalance().subtract(data.getGlBalance());
+            String status = difference.compareTo(BigDecimal.ZERO) == 0 ? "MATCHED" : "MISMATCHED";
+            
+            if ("MATCHED".equals(status)) {
+                matchedCount++;
+            } else {
+                mismatchedCount++;
             }
 
-            BigDecimal fcyGrandTotalLCY = fcyGroup.stream()
-                    .map(SubproductBalanceData::getTotalLCYBalance)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fcyGrandTotalGL = fcyGroup.stream()
-                    .map(SubproductBalanceData::getGlBalance)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fcyDifference = fcyGrandTotalLCY.subtract(fcyGrandTotalGL);
+            createStyledCell(row, 0, data.getSubProductCode(), dataStyle);
+            createStyledCell(row, 1, data.getSubProductName(), dataStyle);
+            createStyledCell(row, 2, data.getGlNum(), dataStyle);
+            createStyledCell(row, 3, data.getGlName(), dataStyle);
+            createStyledNumericCell(row, 4, new BigDecimal(data.getAccountCount()), numberStyle);
+            createStyledNumericCell(row, 5, data.getTotalFCYAmount(), numberStyle);
+            createStyledNumericCell(row, 6, data.getTotalLCYBalance(), numberStyle);
+            createStyledNumericCell(row, 7, data.getGlBalance(), numberStyle);
+            createStyledNumericCell(row, 8, difference, numberStyle);
+            createStyledCell(row, 9, status, dataStyle);
+            
+            Cell detailCell = row.createCell(10);
+            detailCell.setCellValue("View Detail");
+            detailCell.setCellStyle(hyperlinkStyle);
+            addHyperlinkToSheet(workbook, detailCell, data.getSubProductName());
 
-            Row fcyTotalRow = sheet.createRow(rowNum++);
-            createStyledCell(fcyTotalRow, 5, "FCY Grand Total (LCY):", totalStyle);
-            createStyledNumericCell(fcyTotalRow, 6, fcyGrandTotalLCY, totalStyle);
-
-            Row fcyGLTotalRow = sheet.createRow(rowNum++);
-            createStyledCell(fcyGLTotalRow, 5, "GL Balance Total:", totalStyle);
-            createStyledNumericCell(fcyGLTotalRow, 6, fcyGrandTotalGL, totalStyle);
-
-            Row fcyDiffRow = sheet.createRow(rowNum++);
-            createStyledCell(fcyDiffRow, 5, "Difference:", totalStyle);
-            createStyledNumericCell(fcyDiffRow, 6, fcyDifference, totalStyle);
+            totalAccountBalanceFCY = totalAccountBalanceFCY.add(data.getTotalFCYAmount());
+            totalAccountBalanceLCY = totalAccountBalanceLCY.add(data.getTotalLCYBalance());
+            totalGLBalance = totalGLBalance.add(data.getGlBalance());
+            totalAccountCount += data.getAccountCount();
         }
 
-        for (int i = 0; i < 9; i++) {
+        rowNum++;
+        Row totalRow = sheet.createRow(rowNum);
+        createStyledCell(totalRow, 0, "TOTAL", totalStyle);
+        createStyledCell(totalRow, 1, reportData.size() + " Subproducts", totalStyle);
+        createStyledNumericCell(totalRow, 4, new BigDecimal(totalAccountCount), totalStyle);
+        createStyledNumericCell(totalRow, 5, totalAccountBalanceFCY, totalStyle);
+        createStyledNumericCell(totalRow, 6, totalAccountBalanceLCY, totalStyle);
+        createStyledNumericCell(totalRow, 7, totalGLBalance, totalStyle);
+        createStyledNumericCell(totalRow, 8, totalAccountBalanceLCY.subtract(totalGLBalance), totalStyle);
+        createStyledCell(totalRow, 9, matchedCount + " Matched, " + mismatchedCount + " Mismatched", totalStyle);
+
+        for (int i = 0; i < 11; i++) {
             sheet.autoSizeColumn(i);
             sheet.setColumnWidth(i, sheet.getColumnWidth(i) + 1000);
         }
 
         sheet.createFreezePane(0, 3);
 
-        log.info("Subproduct GL Balance Report generated: {} subproducts", reportData.size());
+        log.info("Subproduct GL Balance Report generated: {} subproducts ({} matched, {} mismatched)", 
+                reportData.size(), matchedCount, mismatchedCount);
         return sheetIndex;
     }
 
     /**
-     * Sheets 4+: Account Balance Report (one sheet per subproduct)
+     * Sheet 4: Account Balance Report (all accounts in one sheet)
+     */
+    private void generateAccountBalanceReport(XSSFWorkbook workbook, LocalDate eodDate) {
+        Sheet sheet = workbook.createSheet("Account Balance Report");
+
+        List<CustAcctMaster> allCustomerAccounts = custAcctMasterRepository.findAll();
+        List<OFAcctMaster> allOfficeAccounts = ofAcctMasterRepository.findAll();
+
+        List<String> allAccountNos = new ArrayList<>();
+        allCustomerAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+        allOfficeAccounts.forEach(a -> allAccountNos.add(a.getAccountNo()));
+
+        Map<String, AcctBal> acctBalMap = new HashMap<>();
+        Map<String, AcctBalLcy> acctBalLcyMap = new HashMap<>();
+
+        if (!allAccountNos.isEmpty()) {
+            acctBalMap = acctBalRepository
+                    .findByAccountNoInAndTranDate(allAccountNos, eodDate)
+                    .stream()
+                    .collect(Collectors.toMap(AcctBal::getAccountNo, ab -> ab));
+
+            acctBalLcyMap = acctBalLcyRepository
+                    .findByAccountNoInAndTranDate(allAccountNos, eodDate)
+                    .stream()
+                    .collect(Collectors.toMap(AcctBalLcy::getAccountNo, ab -> ab));
+        }
+
+        CellStyle headerStyle = createHeaderStyle(workbook);
+        CellStyle columnHeaderStyle = createColumnHeaderStyle(workbook);
+        CellStyle dataStyle = createDataStyle(workbook);
+        CellStyle numberStyle = createNumberStyle(workbook);
+        CellStyle totalStyle = createBoldStyle(workbook);
+
+        int rowNum = 0;
+
+        Row titleRow = sheet.createRow(rowNum++);
+        Cell titleCell = titleRow.createCell(0);
+        titleCell.setCellValue("Account Balance Report");
+        titleCell.setCellStyle(headerStyle);
+        sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 7));
+
+        Row subtitleRow = sheet.createRow(rowNum++);
+        Cell subtitleCell = subtitleRow.createCell(0);
+        subtitleCell.setCellValue("As of: " + eodDate.format(DATE_FORMATTER));
+        subtitleCell.setCellStyle(headerStyle);
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 7));
+
+        rowNum++;
+
+        Row headerRow = sheet.createRow(rowNum++);
+        String[] headers = {"Account Number", "Account Name", "Currency", "Sub Product Code", 
+                           "Sub Product Name", "FCY Balance", "LCY Balance", "Status"};
+        for (int i = 0; i < headers.length; i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers[i]);
+            cell.setCellStyle(columnHeaderStyle);
+        }
+
+        BigDecimal totalFcyBalance = BigDecimal.ZERO;
+        BigDecimal totalLcyBalance = BigDecimal.ZERO;
+
+        for (CustAcctMaster account : allCustomerAccounts) {
+            AcctBal balance = acctBalMap.get(account.getAccountNo());
+            AcctBalLcy lcyBalance = acctBalLcyMap.get(account.getAccountNo());
+            
+            String currency = balance != null && balance.getAccountCcy() != null 
+                    ? balance.getAccountCcy() : LCY;
+            boolean isBdt = LCY.equals(currency);
+
+            BigDecimal fcyBal = isBdt ? BigDecimal.ZERO 
+                    : nvl(balance != null ? balance.getClosingBal() : null);
+            BigDecimal lcyBal = isBdt 
+                    ? nvl(balance != null ? balance.getClosingBal() : null)
+                    : nvl(lcyBalance != null ? lcyBalance.getClosingBalLcy() : null);
+
+            Row row = sheet.createRow(rowNum++);
+            createStyledCell(row, 0, account.getAccountNo(), dataStyle);
+            createStyledCell(row, 1, account.getAcctName() != null ? account.getAcctName() : "", dataStyle);
+            createStyledCell(row, 2, currency, dataStyle);
+            createStyledCell(row, 3, account.getSubProduct() != null 
+                    ? account.getSubProduct().getSubProductCode() : "", dataStyle);
+            createStyledCell(row, 4, account.getSubProduct() != null 
+                    ? account.getSubProduct().getSubProductName() : "", dataStyle);
+            createStyledNumericCell(row, 5, fcyBal, numberStyle);
+            createStyledNumericCell(row, 6, lcyBal, numberStyle);
+            createStyledCell(row, 7, account.getAccountStatus() != null 
+                    ? account.getAccountStatus().name() : "", dataStyle);
+
+            totalFcyBalance = totalFcyBalance.add(fcyBal);
+            totalLcyBalance = totalLcyBalance.add(lcyBal);
+        }
+
+        for (OFAcctMaster account : allOfficeAccounts) {
+            AcctBal balance = acctBalMap.get(account.getAccountNo());
+            AcctBalLcy lcyBalance = acctBalLcyMap.get(account.getAccountNo());
+            
+            String currency = balance != null && balance.getAccountCcy() != null 
+                    ? balance.getAccountCcy() : LCY;
+            boolean isBdt = LCY.equals(currency);
+
+            BigDecimal fcyBal = isBdt ? BigDecimal.ZERO 
+                    : nvl(balance != null ? balance.getClosingBal() : null);
+            BigDecimal lcyBal = isBdt 
+                    ? nvl(balance != null ? balance.getClosingBal() : null)
+                    : nvl(lcyBalance != null ? lcyBalance.getClosingBalLcy() : null);
+
+            Row row = sheet.createRow(rowNum++);
+            createStyledCell(row, 0, account.getAccountNo(), dataStyle);
+            createStyledCell(row, 1, account.getAcctName() != null ? account.getAcctName() : "", dataStyle);
+            createStyledCell(row, 2, currency, dataStyle);
+            createStyledCell(row, 3, account.getSubProduct() != null 
+                    ? account.getSubProduct().getSubProductCode() : "", dataStyle);
+            createStyledCell(row, 4, account.getSubProduct() != null 
+                    ? account.getSubProduct().getSubProductName() : "", dataStyle);
+            createStyledNumericCell(row, 5, fcyBal, numberStyle);
+            createStyledNumericCell(row, 6, lcyBal, numberStyle);
+            createStyledCell(row, 7, account.getAccountStatus() != null 
+                    ? account.getAccountStatus().name() : "", dataStyle);
+
+            totalFcyBalance = totalFcyBalance.add(fcyBal);
+            totalLcyBalance = totalLcyBalance.add(lcyBal);
+        }
+
+        rowNum++;
+        Row totalRow = sheet.createRow(rowNum);
+        createStyledCell(totalRow, 4, "TOTAL", totalStyle);
+        createStyledNumericCell(totalRow, 5, totalFcyBalance, totalStyle);
+        createStyledNumericCell(totalRow, 6, totalLcyBalance, totalStyle);
+
+        for (int i = 0; i < 8; i++) {
+            sheet.autoSizeColumn(i);
+            sheet.setColumnWidth(i, sheet.getColumnWidth(i) + 1000);
+        }
+
+        sheet.createFreezePane(0, 4);
+
+        log.info("Account Balance Report generated: {} customer accounts, {} office accounts",
+                allCustomerAccounts.size(), allOfficeAccounts.size());
+    }
+
+    /**
+     * Sheets 5+: Account Balance Report (one sheet per subproduct)
      */
     private void generateAccountBalanceSheets(XSSFWorkbook workbook, LocalDate eodDate, int subproductSheetIndex) {
         List<SubProdMaster> subProducts = subProdMasterRepository.findAllActiveSubProducts();
@@ -779,16 +853,16 @@ public class EODStep8ConsolidatedReportService {
                 if (balance == null) continue;
 
                 String currency = balance.getAccountCcy() != null ? balance.getAccountCcy() : LCY;
-                BigDecimal fcyNative = balance.getCurrentBalance() != null ? balance.getCurrentBalance() : BigDecimal.ZERO;
+                BigDecimal fcyClosing = balance.getClosingBal() != null ? balance.getClosingBal() : BigDecimal.ZERO;
 
                 if (LCY.equals(currency)) {
-                    totalLCYBalance = totalLCYBalance.add(fcyNative);
+                    totalLCYBalance = totalLCYBalance.add(fcyClosing);
                 } else {
                     AcctBalLcy lcyRecord = acctBalLcyMap.get(accountNo);
                     BigDecimal lcyBalance = (lcyRecord != null && lcyRecord.getClosingBalLcy() != null)
                             ? lcyRecord.getClosingBalLcy() : BigDecimal.ZERO;
                     totalLCYBalance = totalLCYBalance.add(lcyBalance);
-                    totalFCYAmount = totalFCYAmount.add(fcyNative);
+                    totalFCYAmount = totalFCYAmount.add(fcyClosing);
                     fcyAccountsExist = true;
                 }
             }
@@ -812,7 +886,7 @@ public class EODStep8ConsolidatedReportService {
 
     private BigDecimal getGLBalance(String glNum, LocalDate eodDate) {
         return glBalanceRepository.findByGlNumAndTranDate(glNum, eodDate)
-                .map(GLBalance::getCurrentBalance)
+                .map(GLBalance::getClosingBal)
                 .orElse(BigDecimal.ZERO);
     }
 
