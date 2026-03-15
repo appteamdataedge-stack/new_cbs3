@@ -4,6 +4,8 @@ import com.example.moneymarket.dto.TransactionLineDTO;
 import com.example.moneymarket.dto.TransactionLineResponseDTO;
 import com.example.moneymarket.dto.TransactionRequestDTO;
 import com.example.moneymarket.dto.TransactionResponseDTO;
+import com.example.moneymarket.entity.AcctBal;
+import com.example.moneymarket.entity.AcctBalLcy;
 import com.example.moneymarket.entity.CustAcctMaster;
 import com.example.moneymarket.entity.GLMovement;
 import com.example.moneymarket.entity.GLSetup;
@@ -13,6 +15,7 @@ import com.example.moneymarket.entity.TranTable.TranStatus;
 import com.example.moneymarket.exception.BusinessException;
 import com.example.moneymarket.exception.ResourceNotFoundException;
 import com.example.moneymarket.repository.AcctBalRepository;
+import com.example.moneymarket.repository.AcctBalLcyRepository;
 import com.example.moneymarket.repository.CustAcctMasterRepository;
 import com.example.moneymarket.repository.GLMovementRepository;
 import com.example.moneymarket.repository.GLSetupRepository;
@@ -44,6 +47,7 @@ public class TransactionService {
 
     private final TranTableRepository tranTableRepository;
     private final AcctBalRepository acctBalRepository;
+    private final AcctBalLcyRepository acctBalLcyRepository;
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final GLMovementRepository glMovementRepository;
     private final GLSetupRepository glSetupRepository;
@@ -167,19 +171,27 @@ public class TransactionService {
                 // Settlement trigger = Liability DR or Asset CR → WAE from acc_bal.WAE_Rate for THIS account.
                 // All other combinations → MID rate.
                 boolean isSettlementTrigger = isSettlement && ((liability && isDr) || (asset && isCr));
+                
+                log.info("RATE SELECTION for account {}: isSettlement={}, liability={}, asset={}, isDr={}, isCr={}, isSettlementTrigger={}",
+                        lineDTO.getAccountNo(), isSettlement, liability, asset, isDr, isCr, isSettlementTrigger);
 
                 if (isSettlementTrigger) {
-                    // Read WAE for this leg's account:
-                    // Primary  — most recent non-null acc_bal.WAE_Rate (stored at each credit posting)
-                    // Fallback — live computation via BalanceService (FCY balance / LCY balance)
-                    BigDecimal lineWae = acctBalRepository.findLatestWaeRate(lineDTO.getAccountNo()).orElse(null);
-                    if (lineWae == null || lineWae.compareTo(BigDecimal.ZERO) == 0) {
-                        lineWae = balanceService.getComputedAccountBalance(lineDTO.getAccountNo(), tranDate).getWae();
-                    }
+                    // Read WAE for this leg's account with enhanced diagnostics
+                    log.info("SETTLEMENT TRIGGER: account {} is {} {}, will use WAE",
+                            lineDTO.getAccountNo(),
+                            liability ? "Liability" : "Asset",
+                            isDr ? "DR" : "CR");
+                    
+                    // ALWAYS calculate WAE live from acc_bal + acct_bal_lcy balances
+                    // DO NOT use stored wae_rate column (can be stale)
+                    log.info("Calculating live WAE from balance fields for account {}", lineDTO.getAccountNo());
+                    BigDecimal lineWae = calculateWaeWithDiagnostics(lineDTO.getAccountNo(), lineDTO.getTranCcy(), tranDate);
+                    
                     if (lineWae == null || lineWae.compareTo(BigDecimal.ZERO) == 0) {
                         throw new BusinessException(
                             "WAE not available for settlement account " + lineDTO.getAccountNo() +
-                            ". The account must have an FCY balance with a known LCY cost basis.");
+                            ". The account must have an FCY balance with a known LCY cost basis. " +
+                            "Check that acct_bal_lcy table has a record for this account.");
                     }
                     exchangeRate = lineWae;
                     lcyAmt = lineDTO.getFcyAmt().multiply(lineWae).setScale(2, RoundingMode.HALF_UP);
@@ -904,8 +916,14 @@ public class TransactionService {
 
         int nextSuffix = 3;
 
+        log.info("═══ SETTLEMENT ROW GENERATION START ═══");
+        log.info("Processing {} legs for settlement row generation", legs.size());
+
         for (TranTable leg : legs) {
-            if (leg.getAccountNo() == null) continue;  // skip GL-only rows (shouldn't be present at this stage)
+            if (leg.getAccountNo() == null) {
+                log.debug("Skipping GL-only row (no account): {}", leg.getTranId());
+                continue;
+            }
 
             UnifiedAccountService.AccountInfo info;
             try {
@@ -919,14 +937,28 @@ public class TransactionService {
             boolean isLiabilityDr = info.isLiabilityAccount() && leg.getDrCrFlag() == DrCrFlag.D;
             boolean isAssetCr     = info.isAssetAccount()     && leg.getDrCrFlag() == DrCrFlag.C;
 
+            log.info("SETTLEMENT EVALUATION: account={}, GL={}, isLiability={}, isAsset={}, drCrFlag={}, isLiabilityDr={}, isAssetCr={}",
+                    leg.getAccountNo(),
+                    info.getGlNum(),
+                    info.isLiabilityAccount(),
+                    info.isAssetAccount(),
+                    leg.getDrCrFlag(),
+                    isLiabilityDr,
+                    isAssetCr);
+
             if (!isLiabilityDr && !isAssetCr) {
                 // Non-settlement side (Liability CR or Asset DR): no gain/loss row for this leg.
-                log.debug("Settlement skip: account {} ({} {}) is non-settlement side",
+                log.info("SETTLEMENT SKIP: account {} ({} {}) is non-settlement side - NO gain/loss row",
                         leg.getAccountNo(),
                         info.isLiabilityAccount() ? "Liability" : "Asset",
                         leg.getDrCrFlag());
                 continue;
             }
+
+            log.info("SETTLEMENT TRIGGER CONFIRMED: account {} ({} {}) - will generate gain/loss row",
+                    leg.getAccountNo(),
+                    isLiabilityDr ? "Liability DR" : "Asset CR",
+                    leg.getTranId());
 
             // WAE for this triggered leg: the main loop already resolved WAE from acc_bal and stored
             // it as leg.exchangeRate (Liability DR → WAE_DR; Asset CR → WAE_CR).
@@ -938,12 +970,18 @@ public class TransactionService {
                 continue;
             }
 
+            log.info("SETTLEMENT ROW CALC: account={}, WAE from leg={}, MID={}", 
+                    leg.getAccountNo(), wae, mid);
+
             BigDecimal fcy = leg.getFcyAmt();
-            if (fcy == null || fcy.compareTo(BigDecimal.ZERO) <= 0) continue;
+            if (fcy == null || fcy.compareTo(BigDecimal.ZERO) <= 0) {
+                log.warn("FCY amount is zero or negative for leg {} - skipping", leg.getTranId());
+                continue;
+            }
 
             int midVsWae = mid.compareTo(wae);
             if (midVsWae == 0) {
-                log.debug("WAE == MID ({}) for leg {} – no gain/loss row needed", wae, leg.getTranId());
+                log.info("SETTLEMENT SKIP: WAE == MID ({}) for leg {} – no gain/loss row needed", wae, leg.getTranId());
                 continue;
             }
 
@@ -954,17 +992,27 @@ public class TransactionService {
                     : fcy.multiply(wae).setScale(2, RoundingMode.HALF_UP);
             BigDecimal midLcy = fcy.multiply(mid).setScale(2, RoundingMode.HALF_UP);
             BigDecimal amount = legLcy.subtract(midLcy).abs();
-            if (amount.compareTo(BigDecimal.ZERO) <= 0) continue;
+            
+            log.info("SETTLEMENT AMOUNT CALC: legLcy={}, midLcy={}, diff={}", legLcy, midLcy, amount);
+            
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+                log.warn("Settlement amount is zero for leg {} - skipping", leg.getTranId());
+                continue;
+            }
 
             boolean isGain;
             if (isLiabilityDr) {
                 // LIABILITY DR: bank debit is at WAE; if MID > WAE bank paid out more → LOSS
                 //               if MID < WAE bank paid out less  → GAIN
                 isGain = midVsWae < 0;   // mid < WAE → GAIN
+                log.info("LIABILITY DR logic: MID vs WAE = {}, isGain={} (mid<WAE=gain, mid>WAE=loss)",
+                        midVsWae < 0 ? "MID<WAE" : "MID>WAE", isGain);
             } else {
                 // ASSET CR: bank credit is at WAE; if MID > WAE bank received more → GAIN
                 //           if MID < WAE bank received less        → LOSS
                 isGain = midVsWae > 0;   // mid > WAE → GAIN
+                log.info("ASSET CR logic: MID vs WAE = {}, isGain={} (mid>WAE=gain, mid<WAE=loss)",
+                        midVsWae > 0 ? "MID>WAE" : "MID<WAE", isGain);
             }
 
             log.info("FCY settlement {}: {} leg {}, account={}, WAE={}, MID={}, FCY={}, {} amount={} BDT",
@@ -975,6 +1023,8 @@ public class TransactionService {
 
             addSettlementRow(baseTranId, tranDate, valueDate, amount, isGain, nextSuffix++, out);
         }
+        
+        log.info("═══ SETTLEMENT ROW GENERATION END: {} rows generated ═══", out.size());
 
         return out;
     }
@@ -1090,6 +1140,94 @@ public class TransactionService {
 
         log.warn("No FCY currency found in currency exchange transaction");
         return null;
+    }
+
+    /**
+     * Calculate WAE (Weighted Average Exchange rate) for an account with enhanced diagnostics.
+     * 
+     * WAE formula:
+     *   WAE = currentLCY / currentFCY
+     * where:
+     *   currentFCY = prev_day_closing + today_credits - today_debits  (from acc_bal)
+     *   currentLCY = prev_day_closing_lcy + today_credits_lcy - today_debits_lcy  (from acct_bal_lcy)
+     * 
+     * CRITICAL: LCY MUST come from acct_bal_lcy table (separate table), NOT from acc_bal.
+     * 
+     * @param accountNo The account number
+     * @param currency The account currency
+     * @param tranDate The transaction date for logging context
+     * @return The calculated WAE, or null if calculation fails (caller must handle)
+     */
+    private BigDecimal calculateWaeWithDiagnostics(String accountNo, String currency, LocalDate tranDate) {
+        log.info("═══ WAE CALCULATION START for account {} ═══", accountNo);
+        
+        if ("BDT".equals(currency)) {
+            log.info("BDT account - WAE = 1.0");
+            return BigDecimal.ONE;
+        }
+
+        // Step 1: Get FCY from acc_bal
+        Optional<AcctBal> accBalOpt = acctBalRepository.findByAccountNoAndTranDate(accountNo, tranDate);
+        if (accBalOpt.isEmpty()) {
+            // Fallback to latest
+            accBalOpt = acctBalRepository.findLatestByAccountNo(accountNo);
+        }
+        
+        if (accBalOpt.isEmpty()) {
+            log.error("WAE DIAGNOSTIC: No acc_bal record found for account {} on date {}", accountNo, tranDate);
+            return null;
+        }
+
+        AcctBal accBal = accBalOpt.get();
+        log.info("WAE DIAGNOSTIC: acc_bal found for {} - tran_date={}", accountNo, accBal.getTranDate());
+        
+        BigDecimal openingBal = accBal.getOpeningBal() != null ? accBal.getOpeningBal() : BigDecimal.ZERO;
+        BigDecimal crSummation = accBal.getCrSummation() != null ? accBal.getCrSummation() : BigDecimal.ZERO;
+        BigDecimal drSummation = accBal.getDrSummation() != null ? accBal.getDrSummation() : BigDecimal.ZERO;
+        BigDecimal currentFcy = openingBal.add(crSummation).subtract(drSummation);
+        
+        log.info("WAE DIAGNOSTIC: FCY calculation for {} - opening={}, CR={}, DR={}, current={}",
+                accountNo, openingBal, crSummation, drSummation, currentFcy);
+
+        if (currentFcy.compareTo(BigDecimal.ZERO) == 0) {
+            log.warn("WAE DIAGNOSTIC: FCY balance is zero for account {}, cannot calculate WAE", accountNo);
+            return null;
+        }
+
+        // Step 2: Get LCY from acct_bal_lcy — SEPARATE TABLE
+        Optional<AcctBalLcy> acctBalLcyOpt = acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, tranDate);
+        if (acctBalLcyOpt.isEmpty()) {
+            // Fallback to latest
+            acctBalLcyOpt = acctBalLcyRepository.findLatestByAccountNo(accountNo);
+        }
+        
+        if (acctBalLcyOpt.isEmpty()) {
+            log.error("WAE DIAGNOSTIC: No acct_bal_lcy record found for account {} on date {}", accountNo, tranDate);
+            log.error("WAE DIAGNOSTIC: This account needs an acct_bal_lcy row! Check EOD Step 8 execution.");
+            return null;
+        }
+
+        AcctBalLcy acctBalLcy = acctBalLcyOpt.get();
+        log.info("WAE DIAGNOSTIC: acct_bal_lcy found for {} - tran_date={}", accountNo, acctBalLcy.getTranDate());
+        
+        BigDecimal openingBalLcy = acctBalLcy.getOpeningBalLcy() != null ? acctBalLcy.getOpeningBalLcy() : BigDecimal.ZERO;
+        BigDecimal crSummationLcy = acctBalLcy.getCrSummationLcy() != null ? acctBalLcy.getCrSummationLcy() : BigDecimal.ZERO;
+        BigDecimal drSummationLcy = acctBalLcy.getDrSummationLcy() != null ? acctBalLcy.getDrSummationLcy() : BigDecimal.ZERO;
+        BigDecimal currentLcy = openingBalLcy.add(crSummationLcy).subtract(drSummationLcy);
+        
+        log.info("WAE DIAGNOSTIC: LCY calculation for {} - opening={}, CR={}, DR={}, current={}",
+                accountNo, openingBalLcy, crSummationLcy, drSummationLcy, currentLcy);
+
+        BigDecimal wae = currentLcy.divide(currentFcy, 4, RoundingMode.HALF_UP);
+        log.info("═══ WAE CALCULATED for account {}: {} / {} = {} ═══", accountNo, currentLcy, currentFcy, wae);
+        return wae;
+    }
+
+    /**
+     * Helper method to convert null BigDecimal to ZERO
+     */
+    private BigDecimal nullSafe(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 
     /**
