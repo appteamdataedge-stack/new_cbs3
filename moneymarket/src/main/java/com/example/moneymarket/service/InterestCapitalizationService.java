@@ -158,6 +158,9 @@ public class InterestCapitalizationService {
     /**
      * Returns a preview of accrued FCY/LCY amounts, WAE, mid rate, and estimated gain/loss.
      * Used by the frontend to display FCY breakdown before the user confirms capitalization.
+     * 
+     * CRITICAL: All values read from acct_bal_accrual table (single source of truth).
+     * This table is populated during EOD from intt_accr_tran sums.
      */
     public CapitalizationPreviewDTO getCapitalizationPreview(String accountNo) {
         CustAcctMaster account = custAcctMasterRepository.findById(accountNo)
@@ -166,21 +169,38 @@ public class InterestCapitalizationService {
         String ccy = account.getAccountCcy() != null ? account.getAccountCcy() : "BDT";
         LocalDate systemDate = systemDateService.getSystemDate();
 
-        BigDecimal accruedFcy = getAccruedBalance(accountNo);
-        BigDecimal waeRate = calculateAccrualWae(accountNo, ccy, null);
-        BigDecimal accruedLcy = accruedFcy.multiply(waeRate).setScale(2, RoundingMode.HALF_UP);
+        // Read all accrued values from acct_bal_accrual (single source of truth)
+        Optional<AcctBalAccrual> accrualOpt = acctBalAccrualRepository.findLatestByAccountNo(accountNo);
+        
+        BigDecimal totalFcy = BigDecimal.ZERO;
+        BigDecimal totalLcy = BigDecimal.ZERO;
+        
+        if (accrualOpt.isPresent()) {
+            AcctBalAccrual accrual = accrualOpt.get();
+            totalFcy = accrual.getClosingBal() != null ? accrual.getClosingBal() : BigDecimal.ZERO;
+            totalLcy = accrual.getLcyAmt() != null ? accrual.getLcyAmt() : BigDecimal.ZERO;
+        }
+
+        // Calculate WAE from stored values
+        BigDecimal waeRate = BigDecimal.ONE;
+        if (!"BDT".equals(ccy) && totalFcy.compareTo(BigDecimal.ZERO) > 0) {
+            waeRate = totalLcy.divide(totalFcy, 4, RoundingMode.HALF_UP);
+        }
+        
         BigDecimal midRate = !"BDT".equals(ccy) ? resolveMidRate(ccy, systemDate) : BigDecimal.ONE;
 
-        // Compute from rounded leg amounts (avoids drift from computing (WAE-MID)×FCY independently)
-        BigDecimal waeBasedLcy = accruedFcy.multiply(waeRate).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal midBasedLcy = accruedFcy.multiply(midRate).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal estimatedGainLoss = waeBasedLcy.subtract(midBasedLcy); // positive=gain, negative=loss
+        // Calculate estimated gain/loss using stored LCY vs mid rate LCY
+        BigDecimal midBasedLcy = totalFcy.multiply(midRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal estimatedGainLoss = totalLcy.subtract(midBasedLcy);
+
+        log.info("CapitalizationPreview | account={} FCY={} LCY={} WAE={} MID={} gainLoss={}",
+                accountNo, totalFcy, totalLcy, waeRate, midRate, estimatedGainLoss);
 
         return CapitalizationPreviewDTO.builder()
                 .accountNo(accountNo)
                 .currency(ccy)
-                .accruedFcy(accruedFcy)
-                .accruedLcy(accruedLcy)
+                .accruedFcy(totalFcy)
+                .accruedLcy(totalLcy)
                 .waeRate(waeRate)
                 .midRate(midRate)
                 .estimatedGainLoss(estimatedGainLoss)

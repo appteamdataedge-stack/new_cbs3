@@ -20,6 +20,12 @@ public interface InttAccrTranRepository extends JpaRepository<InttAccrTran, Stri
     List<InttAccrTran> findByStatus(AccrualStatus status);
 
     /**
+     * Find all accrual transactions for a specific account with a specific status
+     * Used during capitalization to find pending entries that need to be marked as Posted
+     */
+    List<InttAccrTran> findByAccountNoAndStatus(String accountNo, AccrualStatus status);
+
+    /**
      * Count interest accrual records that are not in the given status (e.g. unverified when status is Verified)
      */
     Long countByStatusNot(AccrualStatus status);
@@ -175,4 +181,54 @@ public interface InttAccrTranRepository extends JpaRepository<InttAccrTran, Stri
            "AND i.accrTranId LIKE 'S%'")
     List<InttAccrTran> findCreditAccrualsByAccountAndCcy(@Param("accountNo") String accountNo,
                                                           @Param("tranCcy") String tranCcy);
+
+    /**
+     * Sum LCY amounts from all S-prefix accrual entries for an account and date.
+     * Used during EOD to populate lcy_amt in acct_bal_accrual.
+     * 
+     * CRITICAL: Only sums CREDIT leg (Dr_Cr_Flag = 'C') to avoid double-counting.
+     * Each S-type accrual creates TWO entries (DR + CR) with same lcy_amt.
+     * We only sum the CR leg to get the correct total.
+     * 
+     * @param accountNo The account number
+     * @param accrualDate The accrual date
+     * @return Sum of lcy_amt from S-type credit entries only (excludes value date interest)
+     */
+    @Query("SELECT COALESCE(SUM(i.lcyAmt), 0) FROM InttAccrTran i " +
+           "WHERE i.accountNo = :accountNo " +
+           "AND i.accrualDate = :accrualDate " +
+           "AND i.accrTranId LIKE 'S%' " +
+           "AND i.drCrFlag = 'C' " +
+           "AND i.originalDrCrFlag IS NULL")
+    BigDecimal sumLcyAmtByAccountAndDate(@Param("accountNo") String accountNo,
+                                          @Param("accrualDate") LocalDate accrualDate);
+
+    /**
+     * Sum LCY amounts from all S-prefix accrual entries for an account.
+     * Used for capitalization preview to calculate total accrued LCY.
+     * 
+     * CRITICAL: Only sums CREDIT leg (Dr_Cr_Flag = 'C') to avoid double-counting.
+     * Each S-type accrual creates TWO entries (DR + CR) with same lcy_amt.
+     * We only sum the CR leg to get the correct total.
+     * 
+     * @param accountNo The account number
+     * @return Sum of lcy_amt from S-type credit entries only
+     */
+    @Query("SELECT COALESCE(SUM(i.lcyAmt), 0) FROM InttAccrTran i " +
+           "WHERE i.accountNo = :accountNo " +
+           "AND i.accrTranId LIKE 'S%' " +
+           "AND i.drCrFlag = 'C'")
+    BigDecimal sumLcyAmtByAccountNo(@Param("accountNo") String accountNo);
+
+    /**
+     * Sum FCY amounts from all S-prefix accrual entries for an account.
+     * Used for capitalization preview to calculate total accrued FCY.
+     * 
+     * @param accountNo The account number
+     * @return Sum of fcy_amt from all S-type entries
+     */
+    @Query("SELECT COALESCE(SUM(i.fcyAmt), 0) FROM InttAccrTran i " +
+           "WHERE i.accountNo = :accountNo " +
+           "AND i.accrTranId LIKE 'S%'")
+    BigDecimal sumFcyAmtByAccountNo(@Param("accountNo") String accountNo);
 }

@@ -58,4 +58,8 @@ public class AcctBalAccrual {
     // Added as per BRD PTTP02V1.0
     @Column(name = "Closing_Bal", precision = 20, scale = 2, nullable = true)
     private BigDecimal closingBal;
+
+    @Builder.Default
+    @Column(name = "lcy_amt", precision = 20, scale = 2, nullable = false)
+    private BigDecimal lcyAmt = BigDecimal.ZERO;
 }

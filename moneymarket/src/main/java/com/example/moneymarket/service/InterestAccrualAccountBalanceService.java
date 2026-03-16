@@ -172,6 +172,10 @@ public class InterestAccrualAccountBalanceService {
 
         log.info("Value Date Interest Impact: {}", valueDateInterestImpact);
 
+        // Step F2: Calculate LCY amount - sum all LCY amounts from S-type pending accrual entries
+        BigDecimal totalLcy = inttAccrTranRepository.sumLcyAmtByAccountAndDate(accountNo, systemDate);
+        log.info("Total LCY Amount (from S-type entries): {}", totalLcy);
+
         // REMOVED VALIDATION: Both DR and CR can be non-zero when capitalization occurs
         // Example: CR=5 (daily accrual "S"), DR=45 (capitalization "C")
         // This is CORRECT and expected behavior!
@@ -194,10 +198,11 @@ public class InterestAccrualAccountBalanceService {
         log.info("cr_summation: {} (should ONLY be sum of CR transactions)", crSummation);
         log.info("closing_bal: {}", closingBal);
         log.info("interest_amount: {}", interestAmount);
+        log.info("lcy_amt: {} (sum of LCY from S-type entries)", totalLcy);
 
-        // Step H: Save Record with GL_Num
+        // Step H: Save Record with GL_Num and lcy_amt
         saveOrUpdateAccrualBalance(accountNo, glNum, systemDate, openingBal, drSummation,
-                crSummation, closingBal, interestAmount);
+                crSummation, closingBal, interestAmount, totalLcy);
     }
 
     /**
@@ -394,12 +399,12 @@ public class InterestAccrualAccountBalanceService {
     }
 
     /**
-     * Save or update account accrual balance record with GL_Num
+     * Save or update account accrual balance record with GL_Num and lcy_amt
      */
     private void saveOrUpdateAccrualBalance(String accountNo, String glNum, LocalDate tranDate,
                                            BigDecimal openingBal, BigDecimal drSummation,
                                            BigDecimal crSummation, BigDecimal closingBal,
-                                           BigDecimal interestAmount) {
+                                           BigDecimal interestAmount, BigDecimal lcyAmt) {
         // Check if balance record already exists for this account and date
         Optional<AcctBalAccrual> existingBalanceOpt = acctBalAccrualRepository
                 .findByAccountAccountNoAndTranDate(accountNo, tranDate);
@@ -416,7 +421,9 @@ public class InterestAccrualAccountBalanceService {
             acctBalAccrual.setClosingBal(closingBal);
             acctBalAccrual.setInterestAmount(interestAmount);
             acctBalAccrual.setAccrualDate(tranDate);
-            log.debug("Updated existing accrual balance for account {} with GL_Num {}", accountNo, glNum);
+            acctBalAccrual.setLcyAmt(lcyAmt);
+            log.debug("Updated existing accrual balance for account {} with GL_Num {} and lcy_amt {}", 
+                    accountNo, glNum, lcyAmt);
         } else {
             // Get the account entity for the foreign key relationship
             CustAcctMaster account = custAcctMasterRepository.findById(accountNo)
@@ -434,10 +441,11 @@ public class InterestAccrualAccountBalanceService {
                     .crSummation(crSummation)
                     .closingBal(closingBal)
                     .interestAmount(interestAmount)
+                    .lcyAmt(lcyAmt)    // NEW: Set lcy_amt
                     .build();
 
-            log.debug("Created new accrual balance for account {} with GL_Num {} and currency {}",
-                    accountNo, glNum, account.getAccountCcy());
+            log.debug("Created new accrual balance for account {} with GL_Num {}, currency {}, and lcy_amt {}",
+                    accountNo, glNum, account.getAccountCcy(), lcyAmt);
         }
 
         acctBalAccrualRepository.save(acctBalAccrual);
