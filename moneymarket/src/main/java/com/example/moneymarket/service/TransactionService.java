@@ -1153,6 +1153,9 @@ public class TransactionService {
      * 
      * CRITICAL: LCY MUST come from acct_bal_lcy table (separate table), NOT from acc_bal.
      * 
+     * FALLBACK LOGIC (NEW): If acct_bal_lcy record doesn't exist for current date (same-day credit-then-debit scenario),
+     * calculate live WAE directly from acc_bal table using both FCY and LCY balance fields.
+     * 
      * @param accountNo The account number
      * @param currency The account currency
      * @param tranDate The transaction date for logging context
@@ -1202,9 +1205,18 @@ public class TransactionService {
         }
         
         if (acctBalLcyOpt.isEmpty()) {
-            log.error("WAE DIAGNOSTIC: No acct_bal_lcy record found for account {} on date {}", accountNo, tranDate);
-            log.error("WAE DIAGNOSTIC: This account needs an acct_bal_lcy row! Check EOD Step 8 execution.");
-            return null;
+            log.warn("WAE DIAGNOSTIC: No acct_bal_lcy record found for account {} on date {}", accountNo, tranDate);
+            log.info("WAE FALLBACK: Attempting to calculate live WAE from acc_bal table for same-day transactions");
+            
+            // NEW FALLBACK LOGIC: Calculate live WAE from acc_bal table when acct_bal_lcy doesn't exist
+            BigDecimal liveWAE = calculateLiveWAEFromAccBal(accountNo, tranDate);
+            if (liveWAE != null) {
+                log.info("═══ LIVE WAE CALCULATED from acc_bal for account {}: {} ═══", accountNo, liveWAE);
+                return liveWAE;
+            } else {
+                log.error("WAE DIAGNOSTIC: Live WAE calculation failed. This account needs an acct_bal_lcy row! Check EOD Step 8 execution.");
+                return null;
+            }
         }
 
         AcctBalLcy acctBalLcy = acctBalLcyOpt.get();
@@ -1221,6 +1233,125 @@ public class TransactionService {
         BigDecimal wae = currentLcy.divide(currentFcy, 4, RoundingMode.HALF_UP);
         log.info("═══ WAE CALCULATED for account {}: {} / {} = {} ═══", accountNo, currentLcy, currentFcy, wae);
         return wae;
+    }
+
+    /**
+     * Calculate live WAE from tran_table (same logic as UI - BalanceService.getComputedAccountBalance).
+     * This matches the on-the-fly calculation shown to users in the UI.
+     * 
+     * Formula: WAE = Total_LCY / Total_FCY
+     * Where:
+     *   Total_FCY = Previous Day Closing FCY + Today's Credits FCY - Today's Debits FCY
+     *   Total_LCY = Previous Day Closing LCY + Today's Credits LCY - Today's Debits LCY
+     * 
+     * Data sources:
+     *   - Previous day closing: acct_bal_lcy table (yesterday's snapshot)
+     *   - Today's movements: tran_table (live real-time transactions)
+     * 
+     * CRITICAL: This is the CORRECT source of truth for intraday balances.
+     * acc_bal and acct_bal_lcy only update during EOD, NOT after each transaction.
+     * 
+     * @param accountNo The account number
+     * @param tranDate The transaction date
+     * @return The calculated live WAE, or null if calculation fails
+     */
+    private BigDecimal calculateLiveWAEFromAccBal(String accountNo, LocalDate tranDate) {
+        log.info("═══ LIVE WAE CALCULATION from tran_table START for account {} ═══", accountNo);
+        
+        try {
+            // Step 1: Get previous day's closing balance from acct_bal_lcy (yesterday's snapshot)
+            LocalDate previousDay = tranDate.minusDays(1);
+            BigDecimal previousDayFcyClosing = BigDecimal.ZERO;
+            BigDecimal previousDayLcyClosing = BigDecimal.ZERO;
+            
+            Optional<AcctBalLcy> previousDayLcyOpt = acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, previousDay);
+            if (previousDayLcyOpt.isPresent()) {
+                // Note: acct_bal_lcy stores LCY amounts, need to get FCY from acct_bal
+                previousDayLcyClosing = previousDayLcyOpt.get().getClosingBalLcy() != null ? 
+                        previousDayLcyOpt.get().getClosingBalLcy() : BigDecimal.ZERO;
+                log.info("LIVE WAE: Previous day LCY closing balance: {}", previousDayLcyClosing);
+                
+                // Get FCY closing from acct_bal for same date
+                Optional<AcctBal> previousDayFcyOpt = acctBalRepository.findByAccountNoAndTranDate(accountNo, previousDay);
+                if (previousDayFcyOpt.isPresent()) {
+                    previousDayFcyClosing = previousDayFcyOpt.get().getClosingBal() != null ?
+                            previousDayFcyOpt.get().getClosingBal() : BigDecimal.ZERO;
+                    log.info("LIVE WAE: Previous day FCY closing balance: {}", previousDayFcyClosing);
+                }
+            } else {
+                // Fallback: Try to get latest record before current date
+                List<AcctBalLcy> previousRecords = acctBalLcyRepository
+                        .findByAccountNoAndTranDateBeforeOrderByTranDateDesc(accountNo, tranDate);
+                if (!previousRecords.isEmpty()) {
+                    AcctBalLcy latestRecord = previousRecords.get(0);
+                    previousDayLcyClosing = latestRecord.getClosingBalLcy() != null ? 
+                            latestRecord.getClosingBalLcy() : BigDecimal.ZERO;
+                    log.info("LIVE WAE: Latest previous LCY closing: {} (date: {})", 
+                            previousDayLcyClosing, latestRecord.getTranDate());
+                    
+                    // Get corresponding FCY balance
+                    Optional<AcctBal> latestFcyOpt = acctBalRepository.findByAccountNoAndTranDate(
+                            accountNo, latestRecord.getTranDate());
+                    if (latestFcyOpt.isPresent()) {
+                        previousDayFcyClosing = latestFcyOpt.get().getClosingBal() != null ?
+                                latestFcyOpt.get().getClosingBal() : BigDecimal.ZERO;
+                        log.info("LIVE WAE: Latest previous FCY closing: {}", previousDayFcyClosing);
+                    }
+                } else {
+                    log.info("LIVE WAE: No previous balance found - new account, starting from 0");
+                }
+            }
+            
+            // Step 2: Get today's transaction movements from tran_table (live data)
+            // This is the KEY: transactions are posted to tran_table immediately, not to acc_bal
+            List<TranTable> todayTransactions = tranTableRepository.findByAccountNoAndTranDate(accountNo, tranDate);
+            
+            // Sum FCY amounts
+            BigDecimal todayFcyCredits = todayTransactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                    .map(TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            BigDecimal todayFcyDebits = todayTransactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+                    .map(TranTable::getFcyAmt)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            // Sum LCY amounts (Debit_Amount and Credit_Amount are in BDT)
+            BigDecimal todayLcyCredits = todayTransactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                    .map(t -> t.getCreditAmount() != null ? t.getCreditAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            BigDecimal todayLcyDebits = todayTransactions.stream()
+                    .filter(t -> t.getDrCrFlag() == DrCrFlag.D)
+                    .map(t -> t.getDebitAmount() != null ? t.getDebitAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            log.info("LIVE WAE: Today's FCY movements - Credits={}, Debits={}", todayFcyCredits, todayFcyDebits);
+            log.info("LIVE WAE: Today's LCY movements - Credits={}, Debits={}", todayLcyCredits, todayLcyDebits);
+            
+            // Step 3: Calculate current live balances (same formula as UI)
+            BigDecimal totalFcy = previousDayFcyClosing.add(todayFcyCredits).subtract(todayFcyDebits);
+            BigDecimal totalLcy = previousDayLcyClosing.add(todayLcyCredits).subtract(todayLcyDebits);
+            
+            log.info("LIVE WAE: Total balances - FCY={}, LCY={}", totalFcy, totalLcy);
+            
+            // Step 4: Calculate WAE
+            if (totalFcy.compareTo(BigDecimal.ZERO) == 0) {
+                log.warn("LIVE WAE: FCY balance is zero, cannot calculate WAE");
+                return null;
+            }
+            
+            BigDecimal liveWae = totalLcy.abs().divide(totalFcy.abs(), 4, RoundingMode.HALF_UP);
+            log.info("═══ LIVE WAE CALCULATED from tran_table: {} / {} = {} ═══", totalLcy, totalFcy, liveWae);
+            
+            return liveWae;
+            
+        } catch (Exception e) {
+            log.error("LIVE WAE: Error calculating live WAE for account {}: {}", accountNo, e.getMessage(), e);
+            return null;
+        }
     }
 
     /**
