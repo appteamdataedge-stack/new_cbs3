@@ -449,24 +449,77 @@ public class FinancialReportsService {
 
     /**
      * Ensure FX Gain/Loss GLs are present in the balance list.
-     * These GLs are posted by settlement and not linked to sub-products.
-     * If absent from gl_balance for the report date, add a zero-balance entry so they always appear.
+     * These GLs are posted by settlement and FX Conversion module, not linked to sub-products.
+     * If absent from the filtered list, fetch the LATEST balance from gl_balance table.
+     * 
+     * NOTE: Forex GLs may have balances on historical dates (e.g., Feb 6) but report is for current date.
+     * We fetch the most recent balance <= reportDate to show cumulative forex gains/losses.
+     * 
+     * Includes:
+     * - 140203001: Realised Forex Gain (FX Conversion)
+     * - 140203002: Realised Forex Gain (MCT)
+     * - 240203001: Realised Forex Loss (FX Conversion)
+     * - 240203002: Realised Forex Loss (MCT)
      */
     private void ensureFxGLsPresent(List<GLBalance> glBalances, LocalDate date) {
         Set<String> existing = glBalances.stream()
                 .map(GLBalance::getGlNum)
                 .collect(Collectors.toSet());
-        List.of("140203002", "240203002").forEach(glNum -> {
+        
+        List<String> fxGlCodes = List.of("140203001", "140203002", "240203001", "240203002");
+        
+        fxGlCodes.forEach(glNum -> {
             if (!existing.contains(glNum)) {
-                glBalances.add(GLBalance.builder()
-                        .glNum(glNum)
-                        .tranDate(date)
-                        .openingBal(BigDecimal.ZERO)
-                        .drSummation(BigDecimal.ZERO)
-                        .crSummation(BigDecimal.ZERO)
-                        .closingBal(BigDecimal.ZERO)
-                        .currentBalance(BigDecimal.ZERO)
-                        .build());
+                log.info("FX GL {} not in active GL list, fetching latest balance from database...", glNum);
+                
+                // Query gl_balance table for the MOST RECENT balance <= report date
+                // This handles case where FX transaction was posted on Feb 6 but report is for March 29
+                List<GLBalance> fxBalances = glBalanceRepository.findByTranDateAndGlNumIn(date, List.of(glNum));
+                
+                if (!fxBalances.isEmpty()) {
+                    // Found balance for exact date
+                    GLBalance actualBalance = fxBalances.get(0);
+                    log.info("Found balance for {} on {}: Opening={}, DR={}, CR={}, Closing={}", 
+                            glNum, date,
+                            actualBalance.getOpeningBal(),
+                            actualBalance.getDrSummation(),
+                            actualBalance.getCrSummation(),
+                            actualBalance.getClosingBal());
+                    glBalances.add(actualBalance);
+                } else {
+                    // No balance for exact date, fetch most recent balance <= report date
+                    log.info("No balance for {} on {}, fetching latest balance...", glNum, date);
+                    Optional<GLBalance> latestBalance = glBalanceRepository.findLatestByGlNum(glNum);
+                    
+                    if (latestBalance.isPresent() && !latestBalance.get().getTranDate().isAfter(date)) {
+                        GLBalance latest = latestBalance.get();
+                        log.info("Found latest balance for {} on {}: Closing={}", 
+                                glNum, latest.getTranDate(), latest.getClosingBal());
+                        
+                        // Create a synthetic balance entry for the report date using the latest balance
+                        glBalances.add(GLBalance.builder()
+                                .glNum(glNum)
+                                .tranDate(date)  // Use report date
+                                .openingBal(latest.getClosingBal())  // Carry forward closing balance
+                                .drSummation(BigDecimal.ZERO)  // No new transactions since then
+                                .crSummation(BigDecimal.ZERO)
+                                .closingBal(latest.getClosingBal())  // Same as opening
+                                .currentBalance(latest.getClosingBal())
+                                .build());
+                    } else {
+                        // No balance record at all, add zero entry
+                        log.info("No balance record found for {}, adding zero-balance entry", glNum);
+                        glBalances.add(GLBalance.builder()
+                                .glNum(glNum)
+                                .tranDate(date)
+                                .openingBal(BigDecimal.ZERO)
+                                .drSummation(BigDecimal.ZERO)
+                                .crSummation(BigDecimal.ZERO)
+                                .closingBal(BigDecimal.ZERO)
+                                .currentBalance(BigDecimal.ZERO)
+                                .build());
+                    }
+                }
             }
         });
     }

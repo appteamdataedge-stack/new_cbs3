@@ -62,6 +62,7 @@ public class TransactionService {
     private final MultiCurrencyTransactionService multiCurrencyTransactionService;
     private final CurrencyValidationService currencyValidationService;
     private final ExchangeRateService exchangeRateService;
+    private final FxConversionService fxConversionService;
 
     private final Random random = new Random();
 
@@ -403,6 +404,11 @@ public class TransactionService {
         for (TranTable transaction : transactions) {
             // Update status to Posted
             transaction.setTranStatus(TranStatus.Posted);
+
+            // Update FX Position for FXC transactions when posting (checker approval)
+            if ("FXC".equals(transaction.getTranType())) {
+                fxConversionService.updateFxPositionOnApproval(transaction);
+            }
 
             String glNum;
             boolean isGlOnlyRow;

@@ -60,6 +60,12 @@ public class TranTable {
     @Column(name = "Narration", length = 100)
     private String narration;
 
+    @Column(name = "Tran_Type", length = 10)
+    private String tranType;
+
+    @Column(name = "Tran_Sub_Type", length = 20)
+    private String tranSubType;
+
     @Column(name = "UDF1", length = 50)
     private String udf1;
 
@@ -68,6 +74,18 @@ public class TranTable {
 
     @Column(name = "GL_Num", length = 20)
     private String glNum;
+
+    @Column(name = "Deal_Rate", precision = 10, scale = 4)
+    private BigDecimal dealRate;
+
+    @Column(name = "Mid_Rate", precision = 10, scale = 4)
+    private BigDecimal midRate;
+
+    @Column(name = "WAE_Rate", precision = 10, scale = 4)
+    private BigDecimal waeRate;
+
+    @Column(name = "Gain_Loss_Amt", precision = 20, scale = 2)
+    private BigDecimal gainLossAmt;
 
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL)
     private List<GLMovement> glMovements;

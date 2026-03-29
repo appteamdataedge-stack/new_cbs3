@@ -47,6 +47,7 @@ com\example\moneymarket\service\GLReconciliationService$AccountBalanceDetail.cla
 com\example\moneymarket\dto\OfficeAccountRequestDTO.class
 com\example\moneymarket\dto\CapitalizationPreviewDTO.class
 com\example\moneymarket\service\GLReconciliationService$ReconciliationEntry$ReconciliationEntryBuilder.class
+com\example\moneymarket\controller\FxConversionController.class
 com\example\moneymarket\repository\TxnHistAcctRepository.class
 com\example\moneymarket\entity\OFAcctMaster$AccountStatus.class
 com\example\moneymarket\entity\RevalTran.class
@@ -56,6 +57,7 @@ com\example\moneymarket\dto\TransactionLineDTO$TransactionLineDTOBuilder.class
 com\example\moneymarket\repository\FxRateMasterRepository.class
 com\example\moneymarket\service\CustomerAccountService.class
 com\example\moneymarket\service\SubProductGLReconciliationService$SubProductReconciliationEntry.class
+com\example\moneymarket\controller\FxConversionController$FxConversionRequest.class
 com\example\moneymarket\entity\InttAccrTran$AccrualStatus.class
 com\example\moneymarket\service\CustomerService$1.class
 com\example\moneymarket\entity\InterestRateMaster.class
@@ -194,6 +196,7 @@ com\example\moneymarket\service\TransactionHistoryService.class
 com\example\moneymarket\dto\AccountDetailsDTO$AccountDetailsDTOBuilder.class
 com\example\moneymarket\entity\SettlementGainLoss.class
 com\example\moneymarket\entity\GLMovementAccrual$GLMovementAccrualBuilder.class
+com\example\moneymarket\service\FxConversionService.class
 com\example\moneymarket\service\OfficeAccountService.class
 com\example\moneymarket\entity\ProdMaster$ProdMasterBuilder.class
 com\example\moneymarket\service\GLReconciliationService$AccountBalanceDetail$AccountBalanceDetailBuilder.class

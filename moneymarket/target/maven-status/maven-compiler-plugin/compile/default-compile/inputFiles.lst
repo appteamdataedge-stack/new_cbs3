@@ -108,6 +108,8 @@ C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\repository\GL
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\entity\ValueDateInttAccr.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\controller\AdminController.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\repository\CurrencyMasterRepository.java
+C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\controller\FxConversionController.java
+C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\FxConversionService.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\TransactionLineDTO.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\entity\AcctBalId.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\entity\GLSetup.java

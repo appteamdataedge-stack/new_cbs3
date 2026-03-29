@@ -108,11 +108,12 @@ public class TransactionController {
 
     /**
      * Get a transaction by ID
+     * Supports both regular transactions (T prefix) and FX Conversion (F prefix)
      * 
      * @param tranId The transaction ID
      * @return The transaction
      */
-    @GetMapping("/{tranId:T[0-9\\-]+}")
+    @GetMapping("/{tranId:[TF][0-9\\-]+}")
     public ResponseEntity<TransactionResponseDTO> getTransaction(@PathVariable String tranId) {
         TransactionResponseDTO transaction = transactionService.getTransaction(tranId);
         return ResponseEntity.ok(transaction);
@@ -121,11 +122,12 @@ public class TransactionController {
     /**
      * Post a transaction (Checker approves Maker's entry)
      * Moves transaction from Entry to Posted status and updates balances
+     * Supports both regular transactions (T prefix) and FX Conversion (F prefix)
      * 
      * @param tranId The transaction ID
      * @return The posted transaction
      */
-    @PostMapping("/{tranId:T[0-9\\-]+}/post")
+    @PostMapping("/{tranId:[TF][0-9\\-]+}/post")
     public ResponseEntity<TransactionResponseDTO> postTransaction(@PathVariable String tranId) {
         TransactionResponseDTO postedTransaction = transactionService.postTransaction(tranId);
         return ResponseEntity.ok(postedTransaction);
@@ -134,11 +136,12 @@ public class TransactionController {
     /**
      * Verify a transaction (Final approval)
      * Moves transaction from Posted to Verified status
+     * Supports both regular transactions (T prefix) and FX Conversion (F prefix)
      * 
      * @param tranId The transaction ID
      * @return The verified transaction
      */
-    @PostMapping("/{tranId:T[0-9\\-]+}/verify")
+    @PostMapping("/{tranId:[TF][0-9\\-]+}/verify")
     public ResponseEntity<TransactionResponseDTO> verifyTransaction(@PathVariable String tranId) {
         TransactionResponseDTO verifiedTransaction = transactionService.verifyTransaction(tranId);
         return ResponseEntity.ok(verifiedTransaction);
@@ -173,12 +176,13 @@ public class TransactionController {
     /**
      * Reverse a transaction
      * Creates opposite entries to reverse the original transaction
+     * Supports both regular transactions (T prefix) and FX Conversion (F prefix)
      * 
      * @param tranId The transaction ID to reverse
      * @param reason The reason for reversal
      * @return The reversal transaction
      */
-    @PostMapping("/{tranId:T[0-9\\-]+}/reverse")
+    @PostMapping("/{tranId:[TF][0-9\\-]+}/reverse")
     public ResponseEntity<TransactionResponseDTO> reverseTransaction(
             @PathVariable String tranId,
             @RequestParam(required = false, defaultValue = "Manual reversal") String reason) {

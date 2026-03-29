@@ -23,7 +23,7 @@ public class CustAcctMaster {
     @Column(name = "Account_No", length = 13)
     private String accountNo;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "Sub_Product_Id", nullable = false)
     private SubProdMaster subProduct;
 

@@ -19,6 +19,7 @@ import TransactionList from '../pages/transactions/TransactionList';
 import TransactionForm from '../pages/transactions/TransactionForm';
 import { InterestCapitalizationList, InterestCapitalizationDetails } from '../pages/interestCapitalization';
 import ExchangeRateManagement from '../pages/exchange-rates/ExchangeRateManagement';
+import FxConversionForm from '../pages/fx-conversion/FxConversionForm';
 import StatementOfAccounts from '../pages/StatementOfAccounts';
 import StatementOfGL from '../pages/StatementOfGL';
 import SettlementReports from '../pages/SettlementReports';
@@ -121,6 +122,9 @@ const AppRoutes = () => {
         {/* Interest Capitalization */}
         <Route path="/interest-capitalization" element={<InterestCapitalizationList />} />
         <Route path="/interest-capitalization/:accountNo" element={<InterestCapitalizationDetails />} />
+
+        {/* FX Conversion */}
+        <Route path="/fx-conversion" element={<FxConversionForm />} />
 
         {/* Exchange Rate Management */}
         <Route path="/exchange-rates" element={<ExchangeRateManagement />} />
