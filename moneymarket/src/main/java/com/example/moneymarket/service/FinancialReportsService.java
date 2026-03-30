@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -95,6 +96,7 @@ public class FinancialReportsService {
         }
 
         ensureFxGLsPresent(glBalances, reportDate);
+        ensurePositionGLsPresent(glBalances, reportDate);
         return generateTrialBalanceReportFromBalancesAsBytes(glBalances, reportDate);
     }
 
@@ -130,6 +132,7 @@ public class FinancialReportsService {
         }
 
         ensureFxGLsPresent(glBalances, reportDate);
+        ensurePositionGLsPresent(glBalances, reportDate);
 
         // Separate Liabilities and Assets
         List<GLBalance> liabilities = glBalances.stream()
@@ -720,4 +723,95 @@ public class FinancialReportsService {
         return amount != null ? amount.toPlainString() : "0.00";
     }
 
+    /**
+     * Generate Trial Balance Report with ALL GL accounts from gl_balance table
+     * This method dynamically fetches all GL accounts and automatically includes
+     * new GL accounts when they are added to gl_balance in the future.
+     * 
+     * @param systemDate The system date for reporting
+     * @return byte array containing CSV content
+     */
+    @Transactional(readOnly = true)
+    public byte[] generateTrialBalanceAllGLAccountsAsBytes(LocalDate systemDate) throws IOException {
+        LocalDate reportDate = systemDate != null ? systemDate : systemDateService.getSystemDate();
+        
+        log.info("===========================================");
+        log.info("Generating Trial Balance Report - ALL GL Accounts");
+        log.info("Report Date: {}", reportDate);
+        log.info("===========================================");
+
+        // Fetch ALL GL balances for the report date (no filtering by active accounts)
+        List<GLBalance> glBalances = glBalanceRepository.findByTranDate(reportDate);
+        
+        log.info("Found {} GL balance records for date: {}", glBalances.size(), reportDate);
+
+        // Ensure FX GL accounts are present (if not in results, fetch historical)
+        ensureFxGLsPresent(glBalances, reportDate);
+        ensurePositionGLsPresent(glBalances, reportDate);
+
+        return generateTrialBalanceReportFromBalancesAsBytes(glBalances, reportDate);
+    }
+
+    /**
+     * Ensure Position GL accounts (920101001, 920101002) are present in the report
+     * These accounts track the bank's FCY inventory and BDT equivalent
+     * If not found in the fetched results, query them explicitly from gl_balance table
+     */
+    private void ensurePositionGLsPresent(List<GLBalance> glBalances, LocalDate date) {
+        Set<String> existing = glBalances.stream()
+                .map(GLBalance::getGlNum)
+                .collect(Collectors.toSet());
+        
+        List<String> positionGlCodes = List.of("920101001", "920101002");
+        
+        positionGlCodes.forEach(glNum -> {
+            if (!existing.contains(glNum)) {
+                log.info("Position GL {} not in result list, fetching from database...", glNum);
+                
+                // Query gl_balance table for this Position account
+                List<GLBalance> positionBalances = glBalanceRepository.findByTranDateAndGlNumIn(date, List.of(glNum));
+                
+                if (!positionBalances.isEmpty()) {
+                    // Found balance for exact date
+                    positionBalances.forEach(balance -> {
+                        log.info("Found Position account {} on {}: Opening={}, DR={}, CR={}, Closing={}", 
+                                glNum, date,
+                                balance.getOpeningBal(),
+                                balance.getDrSummation(),
+                                balance.getCrSummation(),
+                                balance.getClosingBal());
+                        glBalances.add(balance);
+                    });
+                } else {
+                    // No balance for exact date, fetch most recent balance <= report date
+                    log.info("No balance for Position account {} on {}, fetching latest...", glNum, date);
+                    Optional<GLBalance> latestBalance = glBalanceRepository.findLatestByGlNum(glNum);
+                    
+                    if (latestBalance.isPresent() && !latestBalance.get().getTranDate().isAfter(date)) {
+                        log.info("Using latest balance for {} from date {}", glNum, latestBalance.get().getTranDate());
+                        glBalances.add(latestBalance.get());
+                    } else {
+                        log.warn("No historical balance found for Position account {} on or before {}", glNum, date);
+                        // Create zero-balance entry as placeholder
+                        GLBalance zeroBalance = GLBalance.builder()
+                                .glNum(glNum)
+                                .tranDate(date)
+                                .openingBal(BigDecimal.ZERO)
+                                .drSummation(BigDecimal.ZERO)
+                                .crSummation(BigDecimal.ZERO)
+                                .closingBal(BigDecimal.ZERO)
+                                .currentBalance(BigDecimal.ZERO)
+                                .lastUpdated(LocalDateTime.now())
+                                .build();
+                        glBalances.add(zeroBalance);
+                        log.info("Added zero-balance placeholder for Position account {}", glNum);
+                    }
+                }
+            } else {
+                log.debug("Position account {} already in result list", glNum);
+            }
+        });
+    }
+
 }
+

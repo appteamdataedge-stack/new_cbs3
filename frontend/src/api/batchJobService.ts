@@ -97,6 +97,44 @@ export const downloadTrialBalance = async (reportDate: string): Promise<void> =>
 };
 
 /**
+ * Download Trial Balance CSV file with ALL GL accounts from gl_balance table
+ * Dynamically includes any new GL accounts added to gl_balance in the future
+ */
+export const downloadTrialBalanceAllGLAccounts = async (reportDate: string): Promise<void> => {
+  try {
+    console.log('Downloading Trial Balance (All GL Accounts) for date:', reportDate);
+    
+    const response = await apiRequest<Blob>({
+      method: 'GET',
+      url: `/admin/eod/batch-job-8/download/trial-balance-all-gl/${reportDate}`,
+      responseType: 'blob'
+    });
+    
+    // Create blob from response
+    const blob = new Blob([response], { type: 'text/csv' });
+    
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `TrialBalance_AllGL_${reportDate}.csv`;
+    
+    // Trigger download
+    document.body.appendChild(link);
+    link.click();
+    
+    // Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    console.log('✓ Trial Balance (All GL) downloaded successfully');
+  } catch (error) {
+    console.error('Failed to download Trial Balance (All GL):', error);
+    throw error;
+  }
+};
+
+/**
  * Download Balance Sheet Excel file
  */
 export const downloadBalanceSheet = async (reportDate: string): Promise<void> => {

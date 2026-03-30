@@ -104,6 +104,7 @@ public class EODStep8ConsolidatedReportService {
                 : glBalanceRepository.findByTranDateAndGlNumIn(eodDate, activeGLNumbers);
 
         ensureFxGLsPresent(glBalances, eodDate);
+        ensurePositionGLsPresent(glBalances, eodDate);
         glBalances.sort(Comparator.comparing(GLBalance::getGlNum));
 
         CellStyle headerStyle = createHeaderStyle(workbook);
@@ -187,6 +188,7 @@ public class EODStep8ConsolidatedReportService {
                 : glBalanceRepository.findByTranDateAndGlNumIn(eodDate, balanceSheetGLs);
 
         ensureFxGLsPresent(glBalances, eodDate);
+        ensurePositionGLsPresent(glBalances, eodDate);
 
         List<GLBalance> liabilities = glBalances.stream()
                 .filter(gl -> gl.getGlNum().startsWith("1"))
@@ -1014,6 +1016,66 @@ public class EODStep8ConsolidatedReportService {
                                 .build());
                     }
                 }
+            }
+        });
+    }
+
+    /**
+     * Ensures Position GL accounts (920101001, 920101002) are present in the report
+     * even if they're not in the active GL list.
+     * Position accounts are critical for FX inventory tracking.
+     */
+    private void ensurePositionGLsPresent(List<GLBalance> glBalances, LocalDate date) {
+        Set<String> existing = glBalances.stream()
+                .map(GLBalance::getGlNum)
+                .collect(Collectors.toSet());
+        
+        List<String> positionGlCodes = List.of("920101001", "920101002");
+        
+        positionGlCodes.forEach(glNum -> {
+            if (!existing.contains(glNum)) {
+                log.info("Position GL {} not in result list, fetching from database...", glNum);
+                
+                // First, try to find balance for exact report date
+                List<GLBalance> positionBalances = glBalanceRepository.findByTranDateAndGlNumIn(date, List.of(glNum));
+                
+                if (!positionBalances.isEmpty()) {
+                    // Found balance(s) for exact date - add all currencies
+                    positionBalances.forEach(balance -> {
+                        log.info("Found Position account {} on {}: Opening={}, DR={}, CR={}, Closing={}", 
+                                glNum, date,
+                                balance.getOpeningBal(),
+                                balance.getDrSummation(),
+                                balance.getCrSummation(),
+                                balance.getClosingBal());
+                        glBalances.add(balance);
+                    });
+                } else {
+                    // No balance for exact date, fetch most recent balance (any date)
+                    log.info("No balance for Position account {} on {}, fetching latest...", glNum, date);
+                    Optional<GLBalance> latestBalance = glBalanceRepository.findLatestByGlNum(glNum);
+                    
+                    if (latestBalance.isPresent() && !latestBalance.get().getTranDate().isAfter(date)) {
+                        log.info("Using latest balance for {} from date {}", glNum, latestBalance.get().getTranDate());
+                        glBalances.add(latestBalance.get());
+                    } else {
+                        log.warn("No historical balance found for Position account {} on or before {}", glNum, date);
+                        // Add zero-balance placeholder
+                        GLBalance zeroBalance = GLBalance.builder()
+                                .glNum(glNum)
+                                .tranDate(date)
+                                .openingBal(BigDecimal.ZERO)
+                                .drSummation(BigDecimal.ZERO)
+                                .crSummation(BigDecimal.ZERO)
+                                .closingBal(BigDecimal.ZERO)
+                                .currentBalance(BigDecimal.ZERO)
+                                .build();
+                        glBalances.add(zeroBalance);
+                        log.info("Added zero-balance placeholder for Position account {}", glNum);
+                    }
+                }
+            } else {
+                log.debug("Position account {} already in result list", glNum);
             }
         });
     }

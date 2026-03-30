@@ -23,6 +23,7 @@ import FxConversionForm from '../pages/fx-conversion/FxConversionForm';
 import StatementOfAccounts from '../pages/StatementOfAccounts';
 import StatementOfGL from '../pages/StatementOfGL';
 import SettlementReports from '../pages/SettlementReports';
+import FinancialReports from '../pages/FinancialReports';
 import EOD from '../pages/admin/EOD';
 import BOD from '../pages/admin/BOD';
 import SystemDate from '../pages/admin/SystemDate';
@@ -137,6 +138,9 @@ const AppRoutes = () => {
 
         {/* Settlement Reports */}
         <Route path="/settlement-reports" element={<SettlementReports />} />
+
+        {/* Financial Reports */}
+        <Route path="/financial-reports" element={<FinancialReports />} />
 
         {/* Admin - Requires admin role */}
         <Route element={<ProtectedRoute requiredRole="ADMIN" />}>

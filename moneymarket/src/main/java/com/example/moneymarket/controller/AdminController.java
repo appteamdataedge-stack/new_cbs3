@@ -453,6 +453,54 @@ public class AdminController {
     }
 
     /**
+     * Download Trial Balance CSV file with ALL GL accounts from gl_balance table
+     * Dynamically includes any new GL accounts added to gl_balance in the future
+     * 
+     * GET /api/admin/eod/batch-job-8/download/trial-balance-all-gl/{date}
+     * Example: /api/admin/eod/batch-job-8/download/trial-balance-all-gl/20260330
+     */
+    @GetMapping("/eod/batch-job-8/download/trial-balance-all-gl/{date}")
+    public ResponseEntity<byte[]> downloadTrialBalanceAllGLAccounts(@PathVariable String date) {
+        try {
+            validateDateFormat(date);
+            
+            LocalDate reportDate = LocalDate.parse(date, DateTimeFormatter.ofPattern("yyyyMMdd"));
+            
+            System.out.println("===========================================");
+            System.out.println("Generating Trial Balance - ALL GL Accounts");
+            System.out.println("Date: " + reportDate);
+            System.out.println("===========================================");
+            
+            byte[] content = financialReportsService.generateTrialBalanceAllGLAccountsAsBytes(reportDate);
+            
+            String fileName = "TrialBalance_AllGL_" + date + ".csv";
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("text/csv"));
+            headers.setContentDispositionFormData("attachment", fileName);
+            headers.setContentLength(content.length);
+            
+            System.out.println("✓ Trial Balance (All GL) generated: " + content.length + " bytes");
+            System.out.println("===========================================");
+            
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(content);
+                    
+        } catch (IllegalArgumentException e) {
+            System.err.println("Invalid date format: " + date);
+            return ResponseEntity.badRequest().build();
+        } catch (IOException e) {
+            System.err.println("File generation error: " + e.getMessage());
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            System.err.println("Error generating Trial Balance (All GL): " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+
+    /**
      * Download Balance Sheet Excel file (.xlsx) (generated on-demand, not stored on server)
      */
     @GetMapping("/eod/batch-job-8/download/balance-sheet/{date}")

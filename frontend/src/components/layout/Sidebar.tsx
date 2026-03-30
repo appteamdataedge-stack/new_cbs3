@@ -66,6 +66,7 @@ const Sidebar = ({ open, onToggle }: SidebarProps) => {
     { name: 'Statement of Accounts', path: '/statement-of-accounts', icon: <DescriptionIcon /> },
     { name: 'Statement of GL', path: '/statement-of-gl', icon: <DescriptionIcon /> },
     { name: 'Settlement Reports', path: '/settlement-reports', icon: <AssessmentIcon /> },
+    { name: 'Financial Reports', path: '/financial-reports', icon: <AssessmentIcon /> },
     { name: 'System Date', path: '/admin/system-date', icon: <CalendarTodayIcon /> },
     { name: 'BOD', path: '/admin/bod', icon: <SettingsIcon /> },
     { name: 'EOD', path: '/admin/eod', icon: <SettingsIcon /> },
