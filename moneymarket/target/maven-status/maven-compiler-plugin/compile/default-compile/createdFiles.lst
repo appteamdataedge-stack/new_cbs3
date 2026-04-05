@@ -146,6 +146,7 @@ com\example\moneymarket\repository\AcctBalRepository.class
 com\example\moneymarket\service\GLStatementService$GLOptionDTO$GLOptionDTOBuilder.class
 com\example\moneymarket\entity\CurrencyMaster.class
 com\example\moneymarket\entity\InttAccrTran.class
+com\example\moneymarket\service\EODValidationService$PostEodValidationItem.class
 com\example\moneymarket\controller\SubProductGLReconciliationController.class
 com\example\moneymarket\entity\CustMaster$CustMasterBuilder.class
 com\example\moneymarket\entity\InttAccrTran$InttAccrTranBuilder.class
@@ -202,6 +203,7 @@ com\example\moneymarket\entity\ProdMaster$ProdMasterBuilder.class
 com\example\moneymarket\service\GLReconciliationService$AccountBalanceDetail$AccountBalanceDetailBuilder.class
 com\example\moneymarket\entity\CustMaster$CustomerType.class
 com\example\moneymarket\entity\ValueDateInttAccr.class
+com\example\moneymarket\service\EODValidationService$PostEodValidationReport.class
 com\example\moneymarket\service\RevaluationService$RevaluationEntry.class
 com\example\moneymarket\service\EODValidationService$EODValidationResult.class
 com\example\moneymarket\service\SettlementReportService$CurrencySettlementReport$CurrencySettlementReportBuilder.class

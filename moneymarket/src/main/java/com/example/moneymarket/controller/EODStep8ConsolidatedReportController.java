@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -64,9 +65,13 @@ public class EODStep8ConsolidatedReportController {
 
         } catch (Exception e) {
             log.error("Error generating EOD Step 8 Consolidated Report: {}", e.getMessage(), e);
-            Map<String, String> errorResponse = new HashMap<>();
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("status", "ERROR");
             errorResponse.put("error", "Internal Server Error");
+            errorResponse.put("errorType", "STEP8_REPORT_GENERATION_FAILED");
+            errorResponse.put("exceptionClass", e.getClass().getName());
             errorResponse.put("message", "An error occurred while generating the consolidated report: " + e.getMessage());
+            errorResponse.put("timestamp", LocalDateTime.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }

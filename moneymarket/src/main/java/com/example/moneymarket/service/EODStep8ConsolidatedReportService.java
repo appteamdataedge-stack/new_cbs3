@@ -112,6 +112,7 @@ public class EODStep8ConsolidatedReportService {
         CellStyle dataStyle = createDataStyle(workbook);
         CellStyle numberStyle = createNumberStyle(workbook);
         CellStyle totalStyle = createBoldStyle(workbook);
+        CellStyle statusStyle = createStatusStyle(workbook);
 
         int rowNum = 0;
 
@@ -131,10 +132,7 @@ public class EODStep8ConsolidatedReportService {
             cell.setCellStyle(columnHeaderStyle);
         }
 
-        BigDecimal totalOpening = BigDecimal.ZERO;
-        BigDecimal totalDR = BigDecimal.ZERO;
-        BigDecimal totalCR = BigDecimal.ZERO;
-        BigDecimal totalClosing = BigDecimal.ZERO;
+        int dataStartRow = rowNum; // 0-based index
 
         for (GLBalance glBalance : glBalances) {
             Row row = sheet.createRow(rowNum++);
@@ -151,20 +149,34 @@ public class EODStep8ConsolidatedReportService {
             createStyledNumericCell(row, 3, dr, numberStyle);
             createStyledNumericCell(row, 4, cr, numberStyle);
             createStyledNumericCell(row, 5, closing, numberStyle);
-
-            totalOpening = totalOpening.add(opening);
-            totalDR = totalDR.add(dr);
-            totalCR = totalCR.add(cr);
-            totalClosing = totalClosing.add(closing);
         }
+        int dataEndRow = rowNum - 1; // 0-based index
 
+        // Blank separator row
         rowNum++;
+
+        // TOTAL row (formula-based)
+        int totalRowIdx = rowNum;
         Row totalRow = sheet.createRow(rowNum++);
         createStyledCell(totalRow, 0, "TOTAL", totalStyle);
-        createStyledNumericCell(totalRow, 2, totalOpening, totalStyle);
-        createStyledNumericCell(totalRow, 3, totalDR, totalStyle);
-        createStyledNumericCell(totalRow, 4, totalCR, totalStyle);
-        createStyledNumericCell(totalRow, 5, totalClosing, totalStyle);
+        sheet.addMergedRegion(new CellRangeAddress(totalRowIdx, totalRowIdx, 0, 1));
+        setFormula(totalRow, 2, buildSumFormula("C", dataStartRow, dataEndRow), totalStyle);
+        setFormula(totalRow, 3, buildSumFormula("D", dataStartRow, dataEndRow), totalStyle);
+        setFormula(totalRow, 4, buildSumFormula("E", dataStartRow, dataEndRow), totalStyle);
+        setFormula(totalRow, 5, buildSumFormula("F", dataStartRow, dataEndRow), totalStyle);
+
+        // DIFFERENCE / balance check row
+        int diffRowIdx = rowNum;
+        Row diffRow = sheet.createRow(rowNum++);
+        createStyledCell(diffRow, 0, "DIFFERENCE (Debit - Credit)", totalStyle);
+        setFormula(diffRow, 1, String.format("D%d-E%d", totalRowIdx + 1, totalRowIdx + 1), totalStyle);
+        createStyledCell(diffRow, 3, "Status:", totalStyle);
+        setFormula(
+                diffRow,
+                4,
+                String.format("IF(ABS(B%d)<0.01,\"✅ BALANCED\",\"❌ NOT BALANCED\")", diffRowIdx + 1),
+                statusStyle
+        );
 
         for (int i = 0; i < 6; i++) {
             sheet.autoSizeColumn(i);
@@ -206,6 +218,7 @@ public class EODStep8ConsolidatedReportService {
         CellStyle dataStyle = createDataStyle(workbook);
         CellStyle numberStyle = createNumberStyle(workbook);
         CellStyle totalStyle = createBoldStyle(workbook);
+        CellStyle statusStyle = createStatusStyle(workbook);
 
         int rowNum = 0;
 
@@ -238,8 +251,7 @@ public class EODStep8ConsolidatedReportService {
         createStyledCell(headerRow, 6, "Closing Balance", columnHeaderStyle);
 
         int maxRows = Math.max(liabilities.size(), assets.size());
-        BigDecimal totalLiabilities = BigDecimal.ZERO;
-        BigDecimal totalAssets = BigDecimal.ZERO;
+        int dataStartRow = rowNum; // 0-based index
 
         for (int i = 0; i < maxRows; i++) {
             Row row = sheet.createRow(rowNum++);
@@ -252,8 +264,6 @@ public class EODStep8ConsolidatedReportService {
                 createStyledCell(row, 0, liability.getGlNum(), dataStyle);
                 createStyledCell(row, 1, glName, dataStyle);
                 createStyledNumericCell(row, 2, closing, numberStyle);
-
-                totalLiabilities = totalLiabilities.add(closing);
             }
 
             row.createCell(3);
@@ -266,17 +276,33 @@ public class EODStep8ConsolidatedReportService {
                 createStyledCell(row, 4, asset.getGlNum(), dataStyle);
                 createStyledCell(row, 5, glName, dataStyle);
                 createStyledNumericCell(row, 6, closing, numberStyle);
-
-                totalAssets = totalAssets.add(closing);
             }
         }
+        int dataEndRow = rowNum - 1; // 0-based index
 
+        // Blank separator row
         rowNum++;
-        Row totalRow = sheet.createRow(rowNum);
+
+        // TOTAL row (formula-based)
+        int totalRowIdx = rowNum;
+        Row totalRow = sheet.createRow(rowNum++);
         createStyledCell(totalRow, 0, "TOTAL LIABILITIES", totalStyle);
-        createStyledNumericCell(totalRow, 2, totalLiabilities, totalStyle);
+        setFormula(totalRow, 2, buildSumFormula("C", dataStartRow, dataEndRow), totalStyle);
         createStyledCell(totalRow, 4, "TOTAL ASSETS", totalStyle);
-        createStyledNumericCell(totalRow, 6, totalAssets, totalStyle);
+        setFormula(totalRow, 6, buildSumFormula("G", dataStartRow, dataEndRow), totalStyle);
+
+        // DIFFERENCE / balance check row
+        int diffRowIdx = rowNum;
+        Row diffRow = sheet.createRow(rowNum++);
+        createStyledCell(diffRow, 0, "DIFFERENCE (Assets - Liabilities)", totalStyle);
+        setFormula(diffRow, 1, String.format("G%d-C%d", totalRowIdx + 1, totalRowIdx + 1), totalStyle);
+        createStyledCell(diffRow, 4, "Status:", totalStyle);
+        setFormula(
+                diffRow,
+                6,
+                String.format("IF(ABS(B%d)<0.01,\"✅ BALANCED\",\"❌ NOT BALANCED\")", diffRowIdx + 1),
+                statusStyle
+        );
 
         sheet.setColumnWidth(0, 15 * 256);
         sheet.setColumnWidth(1, 40 * 256);
@@ -1150,6 +1176,21 @@ public class EODStep8ConsolidatedReportService {
         return style;
     }
 
+    private CellStyle createStatusStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setBorderBottom(BorderStyle.THIN);
+        style.setBorderTop(BorderStyle.THIN);
+        style.setBorderLeft(BorderStyle.THIN);
+        style.setBorderRight(BorderStyle.THIN);
+        style.setFillForegroundColor(IndexedColors.LIGHT_GREEN.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        return style;
+    }
+
     private CellStyle createItalicStyle(Workbook workbook) {
         CellStyle style = workbook.createCellStyle();
         Font font = workbook.createFont();
@@ -1183,6 +1224,21 @@ public class EODStep8ConsolidatedReportService {
         Cell cell = row.createCell(column);
         cell.setCellValue(value.doubleValue());
         cell.setCellStyle(style);
+    }
+
+    private void setFormula(Row row, int column, String formula, CellStyle style) {
+        Cell cell = row.createCell(column);
+        cell.setCellFormula(formula);
+        cell.setCellStyle(style);
+    }
+
+    private String buildSumFormula(String excelColumn, int dataStartRowZeroBased, int dataEndRowZeroBased) {
+        if (dataEndRowZeroBased < dataStartRowZeroBased) {
+            return "0";
+        }
+        int start = dataStartRowZeroBased + 1; // Excel row number
+        int end = dataEndRowZeroBased + 1;     // Excel row number
+        return String.format("SUM(%s%d:%s%d)", excelColumn, start, excelColumn, end);
     }
 
     @lombok.Data

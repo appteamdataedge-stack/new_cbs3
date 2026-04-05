@@ -69,36 +69,51 @@ public class FxConversionController {
     }
 
     /**
-     * Get WAE Rate for a currency
+     * Get WAE Rate for a currency, calculated from tran_table (real-time).
+     * Optional ?nostroAccount= param: if provided, calculate WAE for that specific Nostro.
+     * If omitted, calculate aggregate WAE across all Nostro accounts.
+     * Returns hasWae=false with waeRate=null when Nostro FCY balance is zero (Observation #2).
      */
     @GetMapping("/wae/{currencyCode}")
-    public ResponseEntity<?> getWaeRate(@PathVariable String currencyCode) {
+    public ResponseEntity<?> getWaeRate(@PathVariable String currencyCode,
+                                         @RequestParam(required = false) String nostroAccount) {
         log.info("===========================================");
-        log.info("GET /api/fx/wae/{}", currencyCode);
+        log.info("GET /api/fx/wae/{} nostroAccount={}", currencyCode, nostroAccount);
         log.info("===========================================");
 
         try {
             LocalDate tranDate = systemDateService.getSystemDate();
-            BigDecimal waeRate = fxConversionService.calculateWAE(currencyCode, tranDate);
+            BigDecimal waeRate;
+
+            if (nostroAccount != null && !nostroAccount.isBlank()) {
+                waeRate = fxConversionService.calculateWaeFromTranTable(nostroAccount, currencyCode);
+            } else {
+                waeRate = fxConversionService.calculateAggregateWaeFromTranTable(currencyCode);
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("currencyCode", currencyCode);
+            data.put("calculationDate", tranDate);
+            data.put("hasWae", waeRate != null);
+            data.put("waeRate", waeRate);
+            if (nostroAccount != null && !nostroAccount.isBlank()) {
+                data.put("nostroAccount", nostroAccount);
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("data", Map.of(
-                    "currencyCode", currencyCode,
-                    "waeRate", waeRate,
-                    "calculationDate", tranDate
-            ));
+            response.put("data", data);
 
-            log.info("SUCCESS: Returned WAE rate: {}", waeRate);
+            log.info("SUCCESS: WAE={} hasWae={}", waeRate, waeRate != null);
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             log.error("ERROR in getWaeRate for {}: {}", currencyCode, e.getMessage(), e);
-            
+
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("success", false);
             errorResponse.put("message", "Failed to calculate WAE rate: " + e.getMessage());
-            
+
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
         }
     }

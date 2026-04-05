@@ -110,6 +110,16 @@ public class EODOrchestrationService {
             // Batch Job 8: Financial Reports Generation (previously Job 7)
             boolean reportsGenerated = executeBatchJob8(eodDate, systemDate, userId);
 
+            // Post-EOD validations (report integrity checks) — run after balances & reports are generated
+            EODValidationService.PostEodValidationReport post = eodValidationService.performPostEodValidations(systemDate);
+            if (!post.isPassed()) {
+                String msg = "Post-EOD validations failed. EOD will NOT increment System Date.";
+                log.error(msg);
+                logEODJob(eodDate, "Post-EOD Validation", systemDate, userId, 0,
+                        EODLogTable.EODStatus.Failed, msg, "Post-validation");
+                return EODResult.failure(msg);
+            }
+
             // Batch Job 9: System Date Increment (previously Job 8)
             boolean systemDateIncremented = executeBatchJob9(eodDate, systemDate, userId);
             

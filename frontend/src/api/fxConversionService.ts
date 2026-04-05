@@ -70,7 +70,10 @@ export interface FxRateResponse {
 
 export interface FxWaeResponse {
   currencyCode: string;
-  waeRate: number;
+  waeRate: number | null;
+  hasWae: boolean;
+  calculationDate?: string;
+  nostroAccount?: string;
 }
 
 const FX_ENDPOINT = '/fx';
@@ -85,10 +88,11 @@ export const fxConversionApi = {
     return response.data;
   },
 
-  getWaeRate: async (currencyCode: string): Promise<FxWaeResponse> => {
+  getWaeRate: async (currencyCode: string, nostroAccount?: string): Promise<FxWaeResponse> => {
+    const params = nostroAccount ? `?nostroAccount=${encodeURIComponent(nostroAccount)}` : '';
     const response = await apiRequest<{ success: boolean; data: FxWaeResponse }>({
       method: 'GET',
-      url: `${FX_ENDPOINT}/wae/${currencyCode}`,
+      url: `${FX_ENDPOINT}/wae/${currencyCode}${params}`,
     });
     // Backend wraps response in { success, data }
     return response.data;

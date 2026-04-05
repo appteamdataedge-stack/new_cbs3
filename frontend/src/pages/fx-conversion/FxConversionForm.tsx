@@ -52,6 +52,7 @@ const FxConversionForm = () => {
 
   const [midRate, setMidRate] = useState<number | null>(null);
   const [waeRate, setWaeRate] = useState<number | null>(null);
+  const [waeDisplay, setWaeDisplay] = useState<string>('');
 
   const [customerAccounts, setCustomerAccounts] = useState<CustomerAccountOption[]>([]);
   const [nostroAccounts, setNostroAccounts] = useState<NostroAccountOption[]>([]);
@@ -70,10 +71,22 @@ const FxConversionForm = () => {
 
   useEffect(() => {
     if (currencyCode) {
-      fetchRates();
+      fetchMidRateOnly();
       fetchNostroAccounts();
+      // Reset WAE when currency changes (requires Nostro selection)
+      setWaeRate(null);
+      setWaeDisplay('');
     }
   }, [currencyCode]);
+
+  useEffect(() => {
+    if (currencyCode && nostroAccountNo) {
+      fetchWaeForNostro(nostroAccountNo);
+    } else {
+      setWaeRate(null);
+      setWaeDisplay('');
+    }
+  }, [nostroAccountNo, currencyCode]);
 
   const fetchCustomerAccounts = async (search: string) => {
     try {
@@ -108,30 +121,40 @@ const FxConversionForm = () => {
     }
   };
 
-  const fetchRates = async () => {
+  const fetchMidRateOnly = async () => {
     try {
       setLoadingRates(true);
-      console.log('Fetching rates for currency:', currencyCode);
-      
-      const [midRateRes, waeRateRes] = await Promise.all([
-        fxConversionApi.getMidRate(currencyCode),
-        fxConversionApi.getWaeRate(currencyCode),
-      ]);
-      
+      console.log('Fetching mid rate for currency:', currencyCode);
+      const midRateRes = await fxConversionApi.getMidRate(currencyCode);
       console.log('Mid Rate response:', midRateRes);
-      console.log('WAE Rate response:', waeRateRes);
-      
-      // Set rates even if they're zero (important for SELLING mode)
       setMidRate(midRateRes.midRate ?? 0);
-      setWaeRate(waeRateRes.waeRate ?? 0);
-      
-      console.log('Rates set - Mid:', midRateRes.midRate, 'WAE:', waeRateRes.waeRate);
     } catch (error) {
-      console.error('Failed to fetch rates:', error);
-      toast.error('Failed to fetch exchange rates');
-      // Set to 0 instead of null to prevent form blocking
+      console.error('Failed to fetch mid rate:', error);
+      toast.error('Failed to fetch mid rate');
       setMidRate(0);
-      setWaeRate(0);
+    } finally {
+      setLoadingRates(false);
+    }
+  };
+
+  const fetchWaeForNostro = async (nostroAccNo: string) => {
+    try {
+      setLoadingRates(true);
+      console.log('Fetching WAE for Nostro:', nostroAccNo, 'CCY:', currencyCode);
+      const waeRes = await fxConversionApi.getWaeRate(currencyCode, nostroAccNo);
+      console.log('WAE response:', waeRes);
+      if (waeRes.hasWae && waeRes.waeRate != null) {
+        setWaeRate(waeRes.waeRate);
+        setWaeDisplay(waeRes.waeRate.toFixed(6));
+      } else {
+        // Observation #2: Nostro has zero FCY balance — WAE is N/A, transaction still allowed
+        setWaeRate(null);
+        setWaeDisplay('N/A');
+      }
+    } catch (error) {
+      console.error('Failed to fetch WAE:', error);
+      setWaeRate(null);
+      setWaeDisplay('N/A');
     } finally {
       setLoadingRates(false);
     }
@@ -150,6 +173,7 @@ const FxConversionForm = () => {
     setDealRate('');
     setMidRate(null);
     setWaeRate(null);
+    setWaeDisplay('');
   };
 
   const calculatePreview = (): LedgerEntry[] => {
@@ -202,45 +226,47 @@ const FxConversionForm = () => {
         },
       ];
     } else {
-      // SELLING mode - requires WAE rate
-      if (waeRate === null || waeRate === undefined) {
-        console.warn('WAE rate not available for SELLING mode');
-        return [];
-      }
+      // SELLING mode: WAE can be null (N/A) — use midRate as fallback (matches backend logic)
+      const effectiveWae = waeRate ?? midRate ?? 0;
+      const lcyEquiv1 = fcy * effectiveWae;
+      const comparison = deal - effectiveWae;
 
-      const lcyEquiv1 = fcy * waeRate;
-      const comparison = deal - waeRate;
+      // Steps 1-3 are always present; Step 4 (gain/loss) is conditional; Step 5 is always present
+      const baseEntries: LedgerEntry[] = [
+        {
+          stepNumber: 1,
+          drCr: 'CR',
+          accountType: 'Nostro',
+          accountNo: nostroAccountNo,
+          currencyCode: currencyCode,
+          amount: fcy,
+          rateUsed: effectiveWae,
+          lcyEquivalent: lcyEquiv1,
+        },
+        {
+          stepNumber: 2,
+          drCr: 'DR',
+          accountType: 'Position FCY',
+          currencyCode: currencyCode,
+          amount: fcy,
+          rateUsed: effectiveWae,
+          lcyEquivalent: lcyEquiv1,
+        },
+        {
+          stepNumber: 3,
+          drCr: 'CR',
+          accountType: 'Position BDT',
+          currencyCode: 'BDT',
+          amount: lcyEquiv1,
+          rateUsed: 1.0,
+          lcyEquivalent: lcyEquiv1,
+        },
+      ];
 
       if (Math.abs(comparison) < 0.000001) {
+        // No gain/loss — Customer is Step 4
         return [
-          {
-            stepNumber: 1,
-            drCr: 'CR',
-            accountType: 'Nostro',
-            accountNo: nostroAccountNo,
-            currencyCode: currencyCode,
-            amount: fcy,
-            rateUsed: waeRate,
-            lcyEquivalent: lcyEquiv1,
-          },
-          {
-            stepNumber: 2,
-            drCr: 'DR',
-            accountType: 'Position FCY',
-            currencyCode: currencyCode,
-            amount: fcy,
-            rateUsed: waeRate,
-            lcyEquivalent: lcyEquiv1,
-          },
-          {
-            stepNumber: 3,
-            drCr: 'CR',
-            accountType: 'Position BDT',
-            currencyCode: 'BDT',
-            amount: lcyEquiv1,
-            rateUsed: 1.0,
-            lcyEquivalent: lcyEquiv1,
-          },
+          ...baseEntries,
           {
             stepNumber: 4,
             drCr: 'DR',
@@ -253,36 +279,9 @@ const FxConversionForm = () => {
           },
         ];
       } else if (comparison > 0) {
-        const gainAmount = fcy * (deal - waeRate);
+        const gainAmount = fcy * (deal - effectiveWae);
         return [
-          {
-            stepNumber: 1,
-            drCr: 'CR',
-            accountType: 'Nostro',
-            accountNo: nostroAccountNo,
-            currencyCode: currencyCode,
-            amount: fcy,
-            rateUsed: waeRate,
-            lcyEquivalent: lcyEquiv1,
-          },
-          {
-            stepNumber: 2,
-            drCr: 'DR',
-            accountType: 'Position FCY',
-            currencyCode: currencyCode,
-            amount: fcy,
-            rateUsed: waeRate,
-            lcyEquivalent: lcyEquiv1,
-          },
-          {
-            stepNumber: 3,
-            drCr: 'CR',
-            accountType: 'Position BDT',
-            currencyCode: 'BDT',
-            amount: lcyEquiv1,
-            rateUsed: 1.0,
-            lcyEquivalent: lcyEquiv1,
-          },
+          ...baseEntries,
           {
             stepNumber: 4,
             drCr: 'CR',
@@ -304,36 +303,9 @@ const FxConversionForm = () => {
           },
         ];
       } else {
-        const lossAmount = fcy * (waeRate - deal);
+        const lossAmount = fcy * (effectiveWae - deal);
         return [
-          {
-            stepNumber: 1,
-            drCr: 'CR',
-            accountType: 'Nostro',
-            accountNo: nostroAccountNo,
-            currencyCode: currencyCode,
-            amount: fcy,
-            rateUsed: waeRate,
-            lcyEquivalent: lcyEquiv1,
-          },
-          {
-            stepNumber: 2,
-            drCr: 'DR',
-            accountType: 'Position FCY',
-            currencyCode: currencyCode,
-            amount: fcy,
-            rateUsed: waeRate,
-            lcyEquivalent: lcyEquiv1,
-          },
-          {
-            stepNumber: 3,
-            drCr: 'CR',
-            accountType: 'Position BDT',
-            currencyCode: 'BDT',
-            amount: lcyEquiv1,
-            rateUsed: 1.0,
-            lcyEquivalent: lcyEquiv1,
-          },
+          ...baseEntries,
           {
             stepNumber: 4,
             drCr: 'DR',
@@ -411,6 +383,7 @@ const FxConversionForm = () => {
     setDealRate('');
     setMidRate(null);
     setWaeRate(null);
+    setWaeDisplay('');
   };
 
   const selectedCustomerAccount = useMemo(() => {
@@ -428,16 +401,18 @@ const FxConversionForm = () => {
   }, [nostroAccounts, nostroAccountNo]);
 
   const hasGainLoss = useMemo(() => {
-    if (transactionType === 'BUYING' || !waeRate || !dealRate) return false;
+    if (transactionType === 'BUYING' || !dealRate || !midRate) return false;
+    const effectiveWae = waeRate ?? midRate;
     const deal = parseFloat(dealRate);
-    return Math.abs(deal - waeRate) > 0.000001;
-  }, [transactionType, dealRate, waeRate]);
+    return Math.abs(deal - effectiveWae) > 0.000001;
+  }, [transactionType, dealRate, waeRate, midRate]);
 
   const gainLossType = useMemo(() => {
-    if (!hasGainLoss || !waeRate || !dealRate) return null;
+    if (!hasGainLoss || !dealRate || !midRate) return null;
+    const effectiveWae = waeRate ?? midRate;
     const deal = parseFloat(dealRate);
-    return deal > waeRate ? 'GAIN' : 'LOSS';
-  }, [hasGainLoss, dealRate, waeRate]);
+    return deal > effectiveWae ? 'GAIN' : 'LOSS';
+  }, [hasGainLoss, dealRate, waeRate, midRate]);
 
   return (
     <Box>
@@ -583,14 +558,19 @@ const FxConversionForm = () => {
             <Grid item xs={12} md={6}>
               <TextField
                 label="WAE Rate"
-                type="number"
                 fullWidth
-                value={waeRate !== null ? waeRate.toFixed(6) : ''}
+                value={waeDisplay}
                 InputProps={{
                   readOnly: true,
                 }}
                 disabled
-                helperText="Auto-fetched from server"
+                helperText={
+                  waeDisplay === 'N/A'
+                    ? 'Nostro FCY balance is zero — using Mid Rate as fallback'
+                    : nostroAccountNo
+                    ? 'Calculated from Nostro account transactions'
+                    : 'Select a Nostro account to calculate WAE'
+                }
               />
             </Grid>
           </Grid>
@@ -604,7 +584,7 @@ const FxConversionForm = () => {
             type="submit"
             variant="contained"
             startIcon={<SaveIcon />}
-            disabled={loadingRates || midRate === null || (transactionType === 'SELLING' && waeRate === null)}
+            disabled={loadingRates || midRate === null}
           >
             Preview & Submit
           </Button>

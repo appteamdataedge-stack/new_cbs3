@@ -141,6 +141,46 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
     int deleteByTranDateAndTranStatus(@Param("tranDate") LocalDate tranDate, @Param("status") TranStatus status);
 
     /**
+     * Sum debit FCY amount for a Nostro account (for intraday WAE calculation from tran_table)
+     */
+    @Query(value = "SELECT COALESCE(SUM(FCY_Amt), 0) FROM Tran_Table " +
+                   "WHERE Account_No = :accountNo AND Tran_Ccy = :tranCcy " +
+                   "AND Dr_Cr_Flag = 'D' " +
+                   "AND Tran_Status IN ('Posted', 'Verified')",
+           nativeQuery = true)
+    BigDecimal sumDebitFcyByAccountAndCcy(@Param("accountNo") String accountNo, @Param("tranCcy") String tranCcy);
+
+    /**
+     * Sum credit FCY amount for a Nostro account (for intraday WAE calculation from tran_table)
+     */
+    @Query(value = "SELECT COALESCE(SUM(FCY_Amt), 0) FROM Tran_Table " +
+                   "WHERE Account_No = :accountNo AND Tran_Ccy = :tranCcy " +
+                   "AND Dr_Cr_Flag = 'C' " +
+                   "AND Tran_Status IN ('Posted', 'Verified')",
+           nativeQuery = true)
+    BigDecimal sumCreditFcyByAccountAndCcy(@Param("accountNo") String accountNo, @Param("tranCcy") String tranCcy);
+
+    /**
+     * Sum debit LCY amount for a Nostro account (for intraday WAE calculation from tran_table)
+     */
+    @Query(value = "SELECT COALESCE(SUM(LCY_Amt), 0) FROM Tran_Table " +
+                   "WHERE Account_No = :accountNo AND Tran_Ccy = :tranCcy " +
+                   "AND Dr_Cr_Flag = 'D' " +
+                   "AND Tran_Status IN ('Posted', 'Verified')",
+           nativeQuery = true)
+    BigDecimal sumDebitLcyByAccountAndCcy(@Param("accountNo") String accountNo, @Param("tranCcy") String tranCcy);
+
+    /**
+     * Sum credit LCY amount for a Nostro account (for intraday WAE calculation from tran_table)
+     */
+    @Query(value = "SELECT COALESCE(SUM(LCY_Amt), 0) FROM Tran_Table " +
+                   "WHERE Account_No = :accountNo AND Tran_Ccy = :tranCcy " +
+                   "AND Dr_Cr_Flag = 'C' " +
+                   "AND Tran_Status IN ('Posted', 'Verified')",
+           nativeQuery = true)
+    BigDecimal sumCreditLcyByAccountAndCcy(@Param("accountNo") String accountNo, @Param("tranCcy") String tranCcy);
+
+    /**
      * Find all transactions starting with a specific transaction ID prefix
      * Used for revaluation reversal to find all related transactions
      *

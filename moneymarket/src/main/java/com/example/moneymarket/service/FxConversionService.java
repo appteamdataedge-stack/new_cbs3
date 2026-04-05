@@ -2,8 +2,6 @@ package com.example.moneymarket.service;
 
 import com.example.moneymarket.dto.TransactionLineResponseDTO;
 import com.example.moneymarket.dto.TransactionResponseDTO;
-import com.example.moneymarket.entity.AcctBal;
-import com.example.moneymarket.entity.AcctBalLcy;
 import com.example.moneymarket.entity.CustAcctMaster;
 import com.example.moneymarket.entity.GLSetup;
 import com.example.moneymarket.entity.OFAcctMaster;
@@ -61,12 +59,12 @@ public class FxConversionService {
         validateFxConversionRequest(transactionType, customerAccountNo, nostroAccountNo,
                 currencyCode, fcyAmount, dealRate);
 
-        // 2. Fetch Mid Rate and WAE Rate (server-side only)
+        // 2. Fetch Mid Rate (always needed)
         LocalDate tranDate = systemDateService.getSystemDate();
         BigDecimal midRate = fetchMidRate(currencyCode, tranDate);
-        BigDecimal waeRate = calculateWAE(currencyCode, tranDate);
+        BigDecimal waeRate = null;
 
-        log.info("Rates fetched - Mid: {}, WAE: {}", midRate, waeRate);
+        log.info("Mid Rate: {}", midRate);
 
         // 3. Compute amounts
         BigDecimal lcyEquiv = fcyAmount.multiply(dealRate).setScale(2, RoundingMode.HALF_UP);
@@ -74,10 +72,18 @@ public class FxConversionService {
         BigDecimal gainLossAmount = null;
 
         if ("SELLING".equals(transactionType)) {
+            // Calculate WAE from tran_table for the specific Nostro account (real-time)
+            waeRate = calculateWaeFromTranTable(nostroAccountNo, currencyCode);
+            if (waeRate == null) {
+                log.warn("WAE for Nostro {} is N/A (zero FCY balance), using MID rate {} as fallback", nostroAccountNo, midRate);
+                waeRate = midRate;
+            }
+            log.info("WAE Rate (from tran_table): {}", waeRate);
+
+            // Observation #1: Office Asset (Nostro) cannot be credited beyond zero
+            validateOfficeAssetAccountBalance(nostroAccountNo, currencyCode, fcyAmount);
+
             lcyEquiv1 = fcyAmount.multiply(waeRate).setScale(2, RoundingMode.HALF_UP);
-            
-            // Validate SELLING-specific rules
-            validateSellingTransaction(customerAccountNo, nostroAccountNo, currencyCode, fcyAmount, lcyEquiv);
 
             // Calculate gain/loss
             int comparison = dealRate.compareTo(waeRate);
@@ -241,7 +247,7 @@ public class FxConversionService {
         String positionFcyGl = getGlNumByName("PSUSD EQIV");
         String positionBdtGl = getGlNumByName("PSUSD");
 
-        // Line 1: CR Nostro Account (FCY)
+        // Line 1: CR Nostro Account (FCY at WAE)
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-1")
                 .tranDate(tranDate)
@@ -265,7 +271,7 @@ public class FxConversionService {
                 .gainLossAmt(gainLossAmount)
                 .build());
 
-        // Line 2: DR Position FCY GL
+        // Line 2: DR Position FCY GL (at WAE)
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-2")
                 .tranDate(tranDate)
@@ -288,7 +294,7 @@ public class FxConversionService {
                 .waeRate(waeRate)
                 .build());
 
-        // Line 3: CR Position BDT GL
+        // Line 3: CR Position BDT GL (at WAE)
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-3")
                 .tranDate(tranDate)
@@ -341,8 +347,8 @@ public class FxConversionService {
                     .build());
         }
 
-        // Line 5 (or 4 if no gain/loss): DR Customer Account (BDT)
-        int lastLineNum = gainLossAmount != null && gainLossAmount.compareTo(BigDecimal.ZERO) != 0 ? 5 : 4;
+        // Line 5 (or 4 if no gain/loss): DR Customer Account (BDT at Deal Rate)
+        int lastLineNum = (gainLossAmount != null && gainLossAmount.compareTo(BigDecimal.ZERO) != 0) ? 5 : 4;
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-" + lastLineNum)
                 .tranDate(tranDate)
@@ -400,51 +406,117 @@ public class FxConversionService {
         }
     }
 
-    private void validateSellingTransaction(String customerAccountNo, String nostroAccountNo,
-                                              String currencyCode, BigDecimal fcyAmount, BigDecimal lcyEquiv) {
-        log.info("========== VALIDATING SELLING TRANSACTION ==========");
-        
-        // SELLING Ledger Structure:
-        // Line 1: CR Nostro (FCY) - CREDIT, no validation needed
-        // Line 2: DR Position FCY - DEBIT, MUST validate
-        // Line 3: CR Position BDT - CREDIT, no validation needed
-        // Line 4: CR/DR Gain/Loss - GL account, no validation needed
-        // Line 5: DR Customer (BDT) - Customer receives BDT, no validation needed
-        
-        // CRITICAL: In SELLING, customer RECEIVES BDT (not pays), so we validate they're 
-        // selling enough FCY from Position account, not their BDT balance
-        
-        // Validate Position FCY balance (will be debited in Line 2)
-        String positionFcyGlCode = getGlNumByName("PSUSD EQIV");
-        log.info("Checking Position FCY balance for GL: {}", positionFcyGlCode);
-        
-        try {
-            // Position accounts are GL accounts, use getGLBalance instead of getComputedAccountBalance
-            BigDecimal positionFcyBalance = balanceService.getGLBalance(positionFcyGlCode);
-            
-            log.info("Position FCY balance: {}, Required: {}", positionFcyBalance, fcyAmount);
-            
-            if (positionFcyBalance.compareTo(fcyAmount) < 0) {
-                throw new BusinessException(String.format(
-                        "Insufficient Position %s balance. Available: %s. Required: %s.",
-                        currencyCode, positionFcyBalance, fcyAmount));
-            }
-            
-            log.info("✓ Position FCY balance sufficient");
-            
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Error validating Position FCY balance: ", e);
-            throw new BusinessException("Failed to validate Position FCY balance: " + e.getMessage());
+    /**
+     * Observation #1: Validate Office Asset account (Nostro) credit rule.
+     *
+     * For SELLING:
+     * - Nostro account is credited (FCY balance decreases)
+     * - Office Asset Accounts can only be credited up to zero available balance
+     * - i.e., after credit, balance must not become negative
+     */
+    private void validateOfficeAssetAccountBalance(String nostroAccountNo, String currencyCode, BigDecimal fcyAmountToSell) {
+        log.info("========== VALIDATING OFFICE ASSET ACCOUNT (OBS #1) ==========");
+        log.info("Nostro: {}, CCY: {}, Sell Amount (SELLING / CREDIT): {}", nostroAccountNo, currencyCode, fcyAmountToSell);
+
+        // Ensure we only apply this rule to office asset accounts
+        OFAcctMaster nostro = ofAcctMasterRepository.findById(nostroAccountNo)
+                .orElseThrow(() -> new ResourceNotFoundException("Nostro Account", "Account Number", nostroAccountNo));
+        if (nostro.getGlNum() == null || !nostro.getGlNum().startsWith("2")) {
+            // Not an Office Asset account: skip this validation
+            log.warn("Skipping OBS #1 validation: account {} GL {} is not asset-like (GL should start with '2')",
+                    nostroAccountNo, nostro.getGlNum());
+            return;
         }
-        
-        // NOTE: We do NOT validate:
-        // - Nostro account (Line 1 is CREDIT - credits always increase balance)
-        // - Customer BDT account (In SELLING, customer RECEIVES BDT, not pays)
-        // - Position BDT account (Line 3 is CREDIT)
-        
-        log.info("========== SELLING VALIDATION PASSED ==========");
+
+        // Use the exact same "Available Balance" computation as the account-balance UI (BalanceService)
+        com.example.moneymarket.dto.AccountBalanceDTO bal = balanceService.getComputedAccountBalance(nostroAccountNo);
+        BigDecimal currentAvailable = bal.getAvailableBalance() != null ? bal.getAvailableBalance() : BigDecimal.ZERO;
+        // In this system, Office Asset accounts have DEBIT normal balance represented as negative numbers.
+        // For SELLING (crediting Nostro), we can only credit up to 0 (cannot become positive).
+        // Max sellable = abs(current balance) when current < 0, else 0.
+        BigDecimal maximumSellable = currentAvailable.compareTo(BigDecimal.ZERO) < 0
+                ? currentAvailable.abs()
+                : BigDecimal.ZERO;
+
+        // Defensive: currency mismatch should never happen because earlier validations checked FCY currency.
+        if (bal.getAccountCcy() != null && !currencyCode.equalsIgnoreCase(bal.getAccountCcy())) {
+            throw new BusinessException(String.format(
+                    "Currency mismatch while validating Nostro. Expected %s but balance-service returned %s.",
+                    currencyCode, bal.getAccountCcy()));
+        }
+
+        // SELLING = CREDITing Nostro in FCY terms.
+        // Mirror TransactionValidationService office-asset CREDIT logic:
+        // resultingBalance = availableBalance + creditAmount, must be <= 0
+        BigDecimal resultingBalance = currentAvailable.add(fcyAmountToSell);
+        log.info("Current Available Balance: {} {}; Resulting after SELLING credit: {} {}",
+                currentAvailable, currencyCode, resultingBalance, currencyCode);
+
+        // Scenario 5: invalid state (already positive / credit balance for an asset account)
+        if (currentAvailable.compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException(String.format(
+                    "VALIDATION FAILED: Invalid Nostro Account State\n\n" +
+                            "Office Asset (Nostro) Account %s currently has a CREDIT balance, which is not allowed for Asset accounts.\n\n" +
+                            "Current Available Balance: +%.2f %s (INVALID)\n" +
+                            "Maximum Sellable Amount: 0.00 %s\n\n" +
+                            "Action Required:\n" +
+                            "• Investigate and correct the account balance, OR\n" +
+                            "• Contact system administrator, OR\n" +
+                            "• Select another valid Nostro account",
+                    nostroAccountNo,
+                    currentAvailable, currencyCode,
+                    currencyCode
+            ));
+        }
+
+        // Scenario 4: zero balance -> cannot sell anything
+        if (currentAvailable.compareTo(BigDecimal.ZERO) == 0) {
+            throw new BusinessException(String.format(
+                    "VALIDATION FAILED: Insufficient Nostro Balance\n\n" +
+                            "Office Asset (Nostro) can ONLY be credited up to ZERO available balance.\n\n" +
+                            "Account: %s\n" +
+                            "Currency: %s\n" +
+                            "Current Available Balance: 0.00 %s\n" +
+                            "Requested Sell Amount: %.2f %s\n\n" +
+                            "Maximum Sellable Amount: 0.00 %s\n\n" +
+                            "Action Required:\n" +
+                            "• Fund the Nostro account, OR\n" +
+                            "• Select another Nostro account with positive debit balance",
+                    nostroAccountNo,
+                    currencyCode,
+                    currencyCode,
+                    fcyAmountToSell, currencyCode,
+                    currencyCode
+            ));
+        }
+
+        // Scenario 3: resulting would become positive -> reject
+        if (resultingBalance.compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException(String.format(
+                    "VALIDATION FAILED: Insufficient Nostro Balance\n\n" +
+                            "Office Asset (Nostro) can ONLY be credited up to ZERO available balance.\n\n" +
+                            "Account: %s\n" +
+                            "Currency: %s\n" +
+                            "Current Available Balance: %.2f %s\n" +
+                            "Requested Sell Amount: %.2f %s\n" +
+                            "Resulting Balance: +%.2f %s (INVALID - Cannot be positive)\n\n" +
+                            "Maximum Sellable Amount: %.2f %s\n\n" +
+                            "Office Asset Accounts cannot have positive (Credit) balances.\n\n" +
+                            "Action Required:\n" +
+                            "• Reduce sell amount to maximum %.2f %s, OR\n" +
+                            "• Select another Nostro account with sufficient balance",
+                    nostroAccountNo,
+                    currencyCode,
+                    currentAvailable, currencyCode,
+                    fcyAmountToSell, currencyCode,
+                    resultingBalance, currencyCode,
+                    maximumSellable, currencyCode,
+                    maximumSellable, currencyCode
+            ));
+        }
+
+        log.info("✓ Office Asset (Nostro) SELLING validation passed. Resulting balance: {} {}", resultingBalance, currencyCode);
+        log.info("========== OFFICE ASSET VALIDATION PASSED ==========");
     }
 
     private void verifyLedgerBalance(List<TranTable> lines) {
@@ -488,106 +560,90 @@ public class FxConversionService {
     }
 
     /**
-     * Calculate WAE (Weighted Average Exchange Rate) dynamically from NOSTRO account balances.
-     * 
-     * Formula: WAE = SUM(LCY Balance) / SUM(FCY Balance) for all NOSTRO accounts of same currency
+     * Calculate WAE for a specific Nostro account.
+     *
+     * Observation #2:
+     * - Return null (WAE = N/A) when the selected Nostro account's available balance is zero,
+     *   matching the behavior in `BalanceService`.
      */
-    public BigDecimal calculateWAE(String currencyCode, LocalDate tranDate) {
-        log.info("========== CALCULATE WAE ==========");
-        log.info("Currency: {}, Date: {}", currencyCode, tranDate);
+    public BigDecimal calculateWaeFromTranTable(String nostroAccountNo, String currencyCode) {
+        log.info("========== CALCULATE WAE FOR NOSTRO (OBS #2) ==========");
+        log.info("Nostro: {}, CCY: {}", nostroAccountNo, currencyCode);
 
-        // Get all NOSTRO accounts for this currency (GL starts with '22030' = NOSTRO)
-        List<OFAcctMaster> allAccounts = ofAcctMasterRepository.findAll();
-        log.info("Total office accounts in database: {}", allAccounts.size());
-        
-        List<OFAcctMaster> nostroAccounts = allAccounts.stream()
-                .filter(acc -> {
-                    boolean statusOk = acc.getAccountStatus() == OFAcctMaster.AccountStatus.Active;
-                    boolean currencyOk = currencyCode.equals(acc.getAccountCcy());
-                    boolean glOk = acc.getGlNum() != null && acc.getGlNum().startsWith("22030");
-                    
-                    log.debug("Account {}: status={}, currency={}, GL={} (pattern match: {})", 
-                            acc.getAccountNo(), statusOk, currencyOk, acc.getGlNum(), glOk);
-                    
-                    return statusOk && currencyOk && glOk;
-                })
+        com.example.moneymarket.dto.AccountBalanceDTO bal = balanceService.getComputedAccountBalance(nostroAccountNo);
+
+        if (bal.getAccountCcy() != null && !currencyCode.equalsIgnoreCase(bal.getAccountCcy())) {
+            throw new BusinessException(String.format(
+                    "Currency mismatch while calculating WAE. Expected %s but balance-service returned %s.",
+                    currencyCode, bal.getAccountCcy()));
+        }
+
+        if (bal.getWae() == null) {
+            log.warn("Nostro {} available balance is zero — WAE = N/A", nostroAccountNo);
+        } else {
+            log.info("SUCCESS: WAE for {} = {}", nostroAccountNo, bal.getWae());
+        }
+
+        // BalanceService already enforces: if computedBalance is zero -> WAE=null
+        return bal.getWae();
+    }
+
+    /**
+     * Get net FCY balance for a Nostro account from tran_table (real-time).
+     * Used for Observation #1 balance validation.
+     */
+    public BigDecimal getNostroFcyBalance(String nostroAccountNo, String currencyCode) {
+        BigDecimal drFcy = tranTableRepository.sumDebitFcyByAccountAndCcy(nostroAccountNo, currencyCode);
+        BigDecimal crFcy = tranTableRepository.sumCreditFcyByAccountAndCcy(nostroAccountNo, currencyCode);
+        return drFcy.subtract(crFcy);
+    }
+
+    /**
+     * Calculate aggregate WAE across all Nostro accounts for a currency from tran_table.
+     * Returns null if total FCY balance is zero.
+     */
+    public BigDecimal calculateAggregateWaeFromTranTable(String currencyCode) {
+        log.info("========== CALCULATE AGGREGATE WAE FROM TRAN_TABLE: {} ==========", currencyCode);
+
+        List<OFAcctMaster> nostroAccounts = ofAcctMasterRepository.findAll().stream()
+                .filter(acc -> acc.getAccountStatus() == OFAcctMaster.AccountStatus.Active
+                        && currencyCode.equals(acc.getAccountCcy())
+                        && acc.getGlNum() != null && acc.getGlNum().startsWith("22030"))
                 .collect(Collectors.toList());
 
         if (nostroAccounts.isEmpty()) {
-            log.error("FAILED: No active NOSTRO accounts found for currency: {}", currencyCode);
-            log.error("Debug - Showing all office accounts:");
-            allAccounts.forEach(acc -> 
-                log.error("  Account: {}, GL: {}, Currency: {}, Status: {}", 
-                        acc.getAccountNo(), acc.getGlNum(), acc.getAccountCcy(), acc.getAccountStatus()));
-            throw new BusinessException("No active NOSTRO accounts found for currency: " + currencyCode);
+            log.warn("No active NOSTRO accounts found for currency: {}", currencyCode);
+            return null;
         }
-
-        log.info("Found {} NOSTRO accounts for {}", nostroAccounts.size(), currencyCode);
 
         BigDecimal totalFcy = BigDecimal.ZERO;
         BigDecimal totalLcy = BigDecimal.ZERO;
 
         for (OFAcctMaster nostro : nostroAccounts) {
             String accountNo = nostro.getAccountNo();
-            log.info("Processing NOSTRO account: {}", accountNo);
+            BigDecimal drFcy = tranTableRepository.sumDebitFcyByAccountAndCcy(accountNo, currencyCode);
+            BigDecimal crFcy = tranTableRepository.sumCreditFcyByAccountAndCcy(accountNo, currencyCode);
+            BigDecimal drLcy = tranTableRepository.sumDebitLcyByAccountAndCcy(accountNo, currencyCode);
+            BigDecimal crLcy = tranTableRepository.sumCreditLcyByAccountAndCcy(accountNo, currencyCode);
 
-            // Get FCY balance from acc_bal
-            BigDecimal fcyBalance = getAccountFcyBalance(accountNo, tranDate);
-            log.info("  FCY Balance: {}", fcyBalance);
+            BigDecimal netFcy = drFcy.subtract(crFcy);
+            BigDecimal netLcy = drLcy.subtract(crLcy);
 
-            // Get LCY balance from acct_bal_lcy
-            BigDecimal lcyBalance = getAccountLcyBalance(accountNo, tranDate);
-            log.info("  LCY Balance: {}", lcyBalance);
-
-            totalFcy = totalFcy.add(fcyBalance);
-            totalLcy = totalLcy.add(lcyBalance);
+            if (netFcy.compareTo(BigDecimal.ZERO) > 0) {
+                log.info("  Nostro {}: FCY={}, LCY={}", accountNo, netFcy, netLcy);
+                totalFcy = totalFcy.add(netFcy);
+                totalLcy = totalLcy.add(netLcy);
+            }
         }
 
-        log.info("Total FCY: {}, Total LCY: {}", totalFcy, totalLcy);
-
-        if (totalFcy.compareTo(BigDecimal.ZERO) == 0) {
-            log.error("FAILED: Cannot calculate WAE - Total FCY balance is zero");
-            throw new BusinessException(String.format(
-                    "Cannot calculate WAE for %s: Total FCY balance is zero across all NOSTRO accounts", 
-                    currencyCode));
+        if (totalFcy.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Total {} FCY balance across all Nostros is zero — aggregate WAE = N/A", currencyCode);
+            return null;
         }
 
-        BigDecimal wae = totalLcy.abs().divide(totalFcy.abs(), 6, RoundingMode.HALF_UP);
-        log.info("SUCCESS: Calculated WAE = {}", wae);
-
+        BigDecimal wae = totalLcy.divide(totalFcy, 6, RoundingMode.HALF_UP);
+        log.info("Aggregate WAE for {}: {} / {} = {}", currencyCode, totalLcy, totalFcy, wae);
         return wae;
-    }
-
-    /**
-     * Get FCY balance for an account from acc_bal table
-     */
-    private BigDecimal getAccountFcyBalance(String accountNo, LocalDate tranDate) {
-        // Try to get balance for transaction date
-        return acctBalRepository.findByAccountNoAndTranDate(accountNo, tranDate)
-                .map(AcctBal::getClosingBal)
-                .orElseGet(() -> {
-                    log.debug("No acc_bal for {} on {}, trying latest", accountNo, tranDate);
-                    // Fallback to latest balance
-                    return acctBalRepository.findLatestByAccountNo(accountNo)
-                            .map(AcctBal::getClosingBal)
-                            .orElse(BigDecimal.ZERO);
-                });
-    }
-
-    /**
-     * Get LCY balance for an account from acct_bal_lcy table
-     */
-    private BigDecimal getAccountLcyBalance(String accountNo, LocalDate tranDate) {
-        // Try to get balance for transaction date
-        return acctBalLcyRepository.findByAccountNoAndTranDate(accountNo, tranDate)
-                .map(AcctBalLcy::getClosingBalLcy)
-                .orElseGet(() -> {
-                    log.debug("No acct_bal_lcy for {} on {}, trying latest", accountNo, tranDate);
-                    // Fallback to latest balance
-                    return acctBalLcyRepository.findLatestByAccountNo(accountNo)
-                            .map(AcctBalLcy::getClosingBalLcy)
-                            .orElse(BigDecimal.ZERO);
-                });
     }
 
     public List<CustAcctMaster> searchCustomerAccounts(String search) {
