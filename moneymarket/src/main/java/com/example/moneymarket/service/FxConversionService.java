@@ -2,6 +2,7 @@ package com.example.moneymarket.service;
 
 import com.example.moneymarket.dto.TransactionLineResponseDTO;
 import com.example.moneymarket.dto.TransactionResponseDTO;
+import com.example.moneymarket.dto.FxConversionRequest;
 import com.example.moneymarket.entity.CustAcctMaster;
 import com.example.moneymarket.entity.GLSetup;
 import com.example.moneymarket.entity.OFAcctMaster;
@@ -16,6 +17,8 @@ import com.example.moneymarket.repository.CustAcctMasterRepository;
 import com.example.moneymarket.repository.GLSetupRepository;
 import com.example.moneymarket.repository.OFAcctMasterRepository;
 import com.example.moneymarket.repository.TranTableRepository;
+import com.example.moneymarket.repository.FxPositionRepository;
+import com.example.moneymarket.repository.GLBalanceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,7 +37,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class FxConversionService {
-
     private final TranTableRepository tranTableRepository;
     private final GLSetupRepository glSetupRepository;
     private final CustAcctMasterRepository custAcctMasterRepository;
@@ -44,6 +46,8 @@ public class FxConversionService {
     private final SystemDateService systemDateService;
     private final BalanceService balanceService;
     private final ExchangeRateService exchangeRateService;
+    private final FxPositionRepository fxPositionRepository;
+    private final GLBalanceRepository glBalanceRepository;
 
     private final Random random = new Random();
 
@@ -62,43 +66,60 @@ public class FxConversionService {
         // 2. Fetch Mid Rate (always needed)
         LocalDate tranDate = systemDateService.getSystemDate();
         BigDecimal midRate = fetchMidRate(currencyCode, tranDate);
-        BigDecimal waeRate = null;
+        BigDecimal waeRate = null;  // WAE1 (Nostro)
+        BigDecimal waeRate2 = null; // WAE2 (Position)
 
         log.info("Mid Rate: {}", midRate);
 
         // 3. Compute amounts
-        BigDecimal lcyEquiv = fcyAmount.multiply(dealRate).setScale(2, RoundingMode.HALF_UP);
+        // Deal rate: 4dp, WAE: 4dp, LCY: 2dp (per requirements)
+        BigDecimal dealRate4 = dealRate.setScale(4, RoundingMode.HALF_UP);
+        BigDecimal lcyEquiv = fcyAmount.multiply(dealRate4).setScale(2, RoundingMode.HALF_UP);
         BigDecimal lcyEquiv1 = null;
+        BigDecimal lcyEquiv2 = null;
         BigDecimal gainLossAmount = null;
 
         if ("SELLING".equals(transactionType)) {
-            // Calculate WAE from tran_table for the specific Nostro account (real-time)
+            // Fixed Position GLs for FX Conversion (per CBS3 design)
+            final String positionFcyGl = getPositionFcyGlNumForCurrency(currencyCode);
+
+            // WAE1: Nostro WAE
             waeRate = calculateWaeFromTranTable(nostroAccountNo, currencyCode);
             if (waeRate == null) {
                 log.warn("WAE for Nostro {} is N/A (zero FCY balance), using MID rate {} as fallback", nostroAccountNo, midRate);
-                waeRate = midRate;
+                waeRate = midRate != null ? midRate : BigDecimal.ZERO;
             }
-            log.info("WAE Rate (from tran_table): {}", waeRate);
+            waeRate = waeRate.setScale(4, RoundingMode.HALF_UP);
+            log.info("WAE1 (Nostro): {}", waeRate);
 
-            // Observation #1: Office Asset (Nostro) cannot be credited beyond zero
+            // WAE2: Position FCY WAE
+            waeRate2 = calculatePositionWae2OnTheFly(currencyCode);
+            if (waeRate2 == null) {
+                log.warn("WAE for Position FCY GL {} is N/A (zero FCY balance), using MID rate {} as fallback", positionFcyGl, midRate);
+                waeRate2 = midRate != null ? midRate : BigDecimal.ZERO;
+            }
+            waeRate2 = waeRate2.setScale(4, RoundingMode.HALF_UP);
+            log.info("WAE2 (Position FCY): {}", waeRate2);
+
+            // VALIDATION 8: Office Asset (Nostro) cannot be credited beyond zero
             validateOfficeAssetAccountBalance(nostroAccountNo, currencyCode, fcyAmount);
 
-            lcyEquiv1 = fcyAmount.multiply(waeRate).setScale(2, RoundingMode.HALF_UP);
+            // SELLING calculations
+            lcyEquiv1 = fcyAmount.multiply(waeRate2).setScale(2, RoundingMode.HALF_UP); // Position relieved at WAE2
+            lcyEquiv2 = fcyAmount.multiply(waeRate).setScale(2, RoundingMode.HALF_UP);  // Nostro relieved at WAE1
 
-            // Calculate gain/loss
-            int comparison = dealRate.compareTo(waeRate);
-            if (comparison > 0) {
-                gainLossAmount = fcyAmount.multiply(dealRate.subtract(waeRate))
-                        .setScale(2, RoundingMode.HALF_UP);
-                log.info("GAIN scenario: deal_rate > wae_rate, gain={}", gainLossAmount);
-            } else if (comparison < 0) {
-                gainLossAmount = fcyAmount.multiply(waeRate.subtract(dealRate))
-                        .negate()
-                        .setScale(2, RoundingMode.HALF_UP);
-                log.info("LOSS scenario: deal_rate < wae_rate, loss={}", gainLossAmount);
-            } else {
-                log.info("NO GAIN/LOSS: deal_rate = wae_rate");
-            }
+            // Force-balancing approach:
+            // Compute gain/loss LAST from already-rounded posting legs so DR and CR always match exactly.
+            // For SELLING:
+            //   DR without Step-4 = lcyEquiv1 + lcyEquiv
+            //   CR without Step-4 = lcyEquiv2 + lcyEquiv1
+            //   Step-4 amount      = DRwithoutStep4 - CRwithoutStep4
+            BigDecimal drWithoutStep4 = lcyEquiv1.add(lcyEquiv);
+            BigDecimal crWithoutStep4 = lcyEquiv2.add(lcyEquiv1);
+            gainLossAmount = drWithoutStep4.subtract(crWithoutStep4).setScale(2, RoundingMode.HALF_UP);
+
+            log.info("SELLING forced-balance G/L: DR(no step4)={}, CR(no step4)={}, step4 gain/loss={}",
+                    drWithoutStep4, crWithoutStep4, gainLossAmount);
         }
 
         // 4. Build transaction lines
@@ -111,7 +132,7 @@ public class FxConversionService {
                     currencyCode, fcyAmount, dealRate, midRate, waeRate, lcyEquiv, particulars);
         } else {
             lines = buildSellingTransactionLines(tranId, tranDate, valueDate, customerAccountNo, nostroAccountNo,
-                    currencyCode, fcyAmount, dealRate, midRate, waeRate, lcyEquiv, lcyEquiv1, gainLossAmount, particulars);
+                    currencyCode, fcyAmount, dealRate4, midRate, waeRate, waeRate2, lcyEquiv, lcyEquiv1, lcyEquiv2, gainLossAmount, particulars);
         }
 
         // 5. Verify ledger balance
@@ -124,6 +145,27 @@ public class FxConversionService {
 
         // 7. Build response
         return buildResponse(tranId, tranDate, valueDate, particulars, lines, lcyEquiv, lcyEquiv1, gainLossAmount);
+    }
+
+    /**
+     * New SELLING entry-point for API: Customer buys FCY from Bank.
+     * This reuses the existing FXC maker-checker workflow (creates Tran_Table lines in Entry status).
+     */
+    @Transactional
+    public TransactionResponseDTO processSelling(FxConversionRequest request) {
+        if (request == null) {
+            throw new BusinessException("Request is required");
+        }
+        return createFxConversion(
+                "SELLING",
+                request.getCustomerAccountId(),
+                request.getNostroAccountId(),
+                request.getCurrencyCode(),
+                request.getFcyAmount(),
+                request.getDealRate(),
+                request.getParticulars(),
+                request.getUserId()
+        );
     }
 
     private List<TranTable> buildBuyingTransactionLines(String baseTranId, LocalDate tranDate, LocalDate valueDate,
@@ -238,16 +280,17 @@ public class FxConversionService {
     private List<TranTable> buildSellingTransactionLines(String baseTranId, LocalDate tranDate, LocalDate valueDate,
                                                            String customerAccountNo, String nostroAccountNo,
                                                            String currencyCode, BigDecimal fcyAmount, BigDecimal dealRate,
-                                                           BigDecimal midRate, BigDecimal waeRate, BigDecimal lcyEquiv,
-                                                           BigDecimal lcyEquiv1, BigDecimal gainLossAmount, String particulars) {
+                                                           BigDecimal midRate, BigDecimal waeRate, BigDecimal waeRate2, BigDecimal lcyEquiv,
+                                                           BigDecimal lcyEquiv1, BigDecimal lcyEquiv2, BigDecimal gainLossAmount, String particulars) {
         List<TranTable> lines = new ArrayList<>();
 
         String nostroGlNum = getAccountGlNum(nostroAccountNo);
         String customerGlNum = getAccountGlNum(customerAccountNo);
-        String positionFcyGl = getGlNumByName("PSUSD EQIV");
-        String positionBdtGl = getGlNumByName("PSUSD");
+        // Fixed Position GL accounts for FX Conversion
+        String positionFcyGl = "920101002";
+        String positionBdtGl = "920101001";
 
-        // Line 1: CR Nostro Account (FCY at WAE)
+        // Step 1: CR Nostro Account (FCY at WAE1)
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-1")
                 .tranDate(tranDate)
@@ -259,9 +302,9 @@ public class FxConversionService {
                 .tranCcy(currencyCode)
                 .fcyAmt(fcyAmount)
                 .exchangeRate(waeRate)
-                .lcyAmt(lcyEquiv1)
+                .lcyAmt(lcyEquiv2)
                 .debitAmount(BigDecimal.ZERO)
-                .creditAmount(lcyEquiv1)
+                .creditAmount(lcyEquiv2)
                 .narration(particulars != null ? particulars : "FX Selling - Nostro CR")
                 .tranType("FXC")
                 .tranSubType("SELLING")
@@ -271,7 +314,7 @@ public class FxConversionService {
                 .gainLossAmt(gainLossAmount)
                 .build());
 
-        // Line 2: DR Position FCY GL (at WAE)
+        // Step 2: DR Position FCY GL (at WAE2)
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-2")
                 .tranDate(tranDate)
@@ -282,7 +325,7 @@ public class FxConversionService {
                 .glNum(positionFcyGl)
                 .tranCcy(currencyCode)
                 .fcyAmt(fcyAmount)
-                .exchangeRate(waeRate)
+                .exchangeRate(waeRate2)
                 .lcyAmt(lcyEquiv1)
                 .debitAmount(lcyEquiv1)
                 .creditAmount(BigDecimal.ZERO)
@@ -291,10 +334,10 @@ public class FxConversionService {
                 .tranSubType("SELLING")
                 .dealRate(dealRate)
                 .midRate(midRate)
-                .waeRate(waeRate)
+                .waeRate(waeRate2)
                 .build());
 
-        // Line 3: CR Position BDT GL (at WAE)
+        // Step 3: CR Position BDT GL (BDT, rate=1.0000)
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-3")
                 .tranDate(tranDate)
@@ -314,13 +357,13 @@ public class FxConversionService {
                 .tranSubType("SELLING")
                 .dealRate(dealRate)
                 .midRate(midRate)
-                .waeRate(waeRate)
+                .waeRate(waeRate2)
                 .build());
 
-        // Line 4 (conditional): Gain/Loss
+        // Step 4 (conditional): CR Gain / DR Loss
         if (gainLossAmount != null && gainLossAmount.compareTo(BigDecimal.ZERO) != 0) {
             boolean isGain = gainLossAmount.compareTo(BigDecimal.ZERO) > 0;
-            String gainLossGl = isGain ? getGlNumByName("Realised Forex Gain") : getGlNumByName("Realised Forex Loss");
+            String gainLossGl = isGain ? "140203001" : "240203001";
             DrCrFlag drCr = isGain ? DrCrFlag.C : DrCrFlag.D;
             BigDecimal absAmount = gainLossAmount.abs();
 
@@ -343,11 +386,11 @@ public class FxConversionService {
                     .tranSubType("SELLING")
                     .dealRate(dealRate)
                     .midRate(midRate)
-                    .waeRate(waeRate)
+                    .waeRate(BigDecimal.ONE)
                     .build());
         }
 
-        // Line 5 (or 4 if no gain/loss): DR Customer Account (BDT at Deal Rate)
+        // Step 5 (or step 4 if no gain/loss): DR Customer Account (BDT at deal rate)
         int lastLineNum = (gainLossAmount != null && gainLossAmount.compareTo(BigDecimal.ZERO) != 0) ? 5 : 4;
         lines.add(TranTable.builder()
                 .tranId(baseTranId + "-" + lastLineNum)
@@ -418,12 +461,12 @@ public class FxConversionService {
         log.info("========== VALIDATING OFFICE ASSET ACCOUNT (OBS #1) ==========");
         log.info("Nostro: {}, CCY: {}, Sell Amount (SELLING / CREDIT): {}", nostroAccountNo, currencyCode, fcyAmountToSell);
 
-        // Ensure we only apply this rule to office asset accounts
+        // Ensure we only apply this rule to NOSTRO office asset accounts (GL codes 9220x...)
         OFAcctMaster nostro = ofAcctMasterRepository.findById(nostroAccountNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Nostro Account", "Account Number", nostroAccountNo));
-        if (nostro.getGlNum() == null || !nostro.getGlNum().startsWith("2")) {
-            // Not an Office Asset account: skip this validation
-            log.warn("Skipping OBS #1 validation: account {} GL {} is not asset-like (GL should start with '2')",
+        if (nostro.getGlNum() == null || !nostro.getGlNum().startsWith("9220")) {
+            // Not a Nostro GL: skip this validation
+            log.warn("Skipping Nostro credit-balance validation: account {} GL {} does not start with 9220",
                     nostroAccountNo, nostro.getGlNum());
             return;
         }
@@ -530,6 +573,7 @@ public class FxConversionService {
                 .map(TranTable::getLcyAmt)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        log.info("FXC ledger balance check: totalDR={}, totalCR={}, lines={}", totalDr, totalCr, lines.size());
         if (totalDr.compareTo(totalCr) != 0) {
             throw new BusinessException(String.format(
                     "Ledger imbalance. DR: %s ≠ CR: %s.", totalDr, totalCr));
@@ -567,25 +611,108 @@ public class FxConversionService {
      *   matching the behavior in `BalanceService`.
      */
     public BigDecimal calculateWaeFromTranTable(String nostroAccountNo, String currencyCode) {
-        log.info("========== CALCULATE WAE FOR NOSTRO (OBS #2) ==========");
-        log.info("Nostro: {}, CCY: {}", nostroAccountNo, currencyCode);
+        log.info("========== CALCULATE WAE FROM TRAN_TABLE ==========");
+        log.info("Posting Key: {}, CCY: {}", nostroAccountNo, currencyCode);
 
-        com.example.moneymarket.dto.AccountBalanceDTO bal = balanceService.getComputedAccountBalance(nostroAccountNo);
+        // Use the exact same balance engine as Office Account Details for office accounts.
+        // This guarantees identical WAE values between the two pages.
+        OFAcctMaster officeAccount = ofAcctMasterRepository.findById(nostroAccountNo).orElse(null);
+        if (officeAccount != null) {
+            com.example.moneymarket.dto.AccountBalanceDTO balance = balanceService.getComputedAccountBalance(nostroAccountNo);
+            BigDecimal fcyBalance = balance.getComputedBalance() != null ? balance.getComputedBalance() : BigDecimal.ZERO;
+            BigDecimal lcyBalance = balance.getComputedBalanceLcy() != null ? balance.getComputedBalanceLcy() : BigDecimal.ZERO;
 
-        if (bal.getAccountCcy() != null && !currencyCode.equalsIgnoreCase(bal.getAccountCcy())) {
-            throw new BusinessException(String.format(
-                    "Currency mismatch while calculating WAE. Expected %s but balance-service returned %s.",
-                    currencyCode, bal.getAccountCcy()));
+            if (fcyBalance.compareTo(BigDecimal.ZERO) == 0) {
+                log.warn("WAE source=BalanceService account={} FCY={} LCY={} => WAE=N/A",
+                        nostroAccountNo, fcyBalance, lcyBalance);
+                return null;
+            }
+
+            BigDecimal wae = lcyBalance.abs().divide(fcyBalance.abs(), 4, RoundingMode.HALF_UP);
+            log.info("SUCCESS: WAE source=BalanceService account={} FCY={} LCY={} => WAE={}",
+                    nostroAccountNo, fcyBalance, lcyBalance, wae);
+            return wae;
         }
 
-        if (bal.getWae() == null) {
-            log.warn("Nostro {} available balance is zero — WAE = N/A", nostroAccountNo);
-        } else {
-            log.info("SUCCESS: WAE for {} = {}", nostroAccountNo, bal.getWae());
+        // Fallback for non-office posting keys (e.g., position GLs used in SELLING).
+        BigDecimal drFcy = tranTableRepository.sumDebitFcyByAccountAndCcy(nostroAccountNo, currencyCode);
+        BigDecimal crFcy = tranTableRepository.sumCreditFcyByAccountAndCcy(nostroAccountNo, currencyCode);
+        BigDecimal drLcy = tranTableRepository.sumDebitLcyByAccountAndCcy(nostroAccountNo, currencyCode);
+        BigDecimal crLcy = tranTableRepository.sumCreditLcyByAccountAndCcy(nostroAccountNo, currencyCode);
+        drFcy = drFcy != null ? drFcy : BigDecimal.ZERO;
+        crFcy = crFcy != null ? crFcy : BigDecimal.ZERO;
+        drLcy = drLcy != null ? drLcy : BigDecimal.ZERO;
+        crLcy = crLcy != null ? crLcy : BigDecimal.ZERO;
+        BigDecimal netFcy = drFcy.subtract(crFcy);
+        BigDecimal netLcy = drLcy.subtract(crLcy);
+
+        if (netFcy.compareTo(BigDecimal.ZERO) == 0) {
+            log.warn("WAE source=tran_table postingKey={} FCY={} LCY={} => WAE=N/A",
+                    nostroAccountNo, netFcy, netLcy);
+            return null;
         }
 
-        // BalanceService already enforces: if computedBalance is zero -> WAE=null
-        return bal.getWae();
+        BigDecimal wae = netLcy.abs().divide(netFcy.abs(), 4, RoundingMode.HALF_UP);
+        log.info("SUCCESS: WAE source=tran_table postingKey={} FCY={} LCY={} => WAE={}",
+                nostroAccountNo, netFcy, netLcy, wae);
+        return wae;
+    }
+
+    /**
+     * Calculate WAE1 (Nostro account WAE)
+     */
+    public BigDecimal calculateWAE1(BigDecimal nostroLcyEquivBalance, BigDecimal nostroFcyBalance) {
+        if (nostroFcyBalance == null || nostroFcyBalance.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return nostroLcyEquivBalance.divide(nostroFcyBalance, 6, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Calculate WAE2 (Position account WAE)
+     */
+    public BigDecimal calculateWAE2(BigDecimal positionLcyEquivBalance, BigDecimal positionFcyBalance) {
+        if (positionFcyBalance == null || positionFcyBalance.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return positionLcyEquivBalance.divide(positionFcyBalance, 6, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * SELLING gain/loss breakdown helper for diagnostics/UI projections.
+     * Net is computed from rounded posting legs so it matches ledger posting behavior.
+     */
+    public SellingGainLossBreakdown calculateSellingGainLossBreakdown(BigDecimal fcyAmount,
+                                                                      BigDecimal dealRate,
+                                                                      BigDecimal wae1Rate,
+                                                                      BigDecimal wae2Rate) {
+        BigDecimal deal4 = dealRate.setScale(4, RoundingMode.HALF_UP);
+        BigDecimal wae14 = wae1Rate.setScale(4, RoundingMode.HALF_UP);
+        BigDecimal wae24 = wae2Rate.setScale(4, RoundingMode.HALF_UP);
+
+        BigDecimal nostroComponent = fcyAmount.multiply(wae24.subtract(wae14)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal positionComponent = fcyAmount.multiply(deal4.subtract(wae24)).setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal lcyEquiv = fcyAmount.multiply(deal4).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal lcyEquiv1 = fcyAmount.multiply(wae24).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal lcyEquiv2 = fcyAmount.multiply(wae14).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal net = calculateBalancedGainLossForSelling(lcyEquiv, lcyEquiv1, lcyEquiv2);
+
+        return new SellingGainLossBreakdown(nostroComponent, positionComponent, net);
+    }
+
+    public record SellingGainLossBreakdown(BigDecimal nostroComponent,
+                                           BigDecimal positionComponent,
+                                           BigDecimal net) {}
+
+    /**
+     * Step-4 posting amount for SELLING from rounded ledger legs.
+     * Positive => Gain (CR), Negative => Loss (DR).
+     */
+    public BigDecimal calculateBalancedGainLossForSelling(BigDecimal lcyEquiv, BigDecimal lcyEquiv1, BigDecimal lcyEquiv2) {
+        BigDecimal drWithoutStep4 = lcyEquiv1.add(lcyEquiv);
+        BigDecimal crWithoutStep4 = lcyEquiv2.add(lcyEquiv1);
+        return drWithoutStep4.subtract(crWithoutStep4).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**
@@ -644,6 +771,66 @@ public class FxConversionService {
         BigDecimal wae = totalLcy.divide(totalFcy, 6, RoundingMode.HALF_UP);
         log.info("Aggregate WAE for {}: {} / {} = {}", currencyCode, totalLcy, totalFcy, wae);
         return wae;
+    }
+
+    public String getPositionFcyGlNumForCurrency(String currency) {
+        return switch (currency) {
+            case "USD" -> "920101002";
+            case "EUR" -> "920101003";
+            case "GBP" -> "920101004";
+            case "JPY" -> "920101005";
+            default -> "920101002";
+        };
+    }
+
+    /**
+     * Position WAE2 using on-the-fly pattern:
+     * previous closing snapshot + today's verified movements.
+     */
+    public BigDecimal calculatePositionWae2OnTheFly(String currencyCode) {
+        String positionFcyGl = getPositionFcyGlNumForCurrency(currencyCode);
+        String positionBdtGl = "920101001";
+        LocalDate today = systemDateService.getSystemDate();
+        LocalDate previousDate = today.minusDays(1);
+
+        BigDecimal prevClosingFcy = fxPositionRepository
+                .findByTranDateAndPositionGlNumAndPositionCcy(previousDate, positionFcyGl, currencyCode)
+                .map(com.example.moneymarket.entity.FxPosition::getClosingBal)
+                .orElseGet(() -> fxPositionRepository
+                        .findTopByPositionGlNumAndPositionCcyAndTranDateLessThanOrderByTranDateDesc(positionFcyGl, currencyCode, today)
+                        .map(com.example.moneymarket.entity.FxPosition::getClosingBal)
+                        .orElse(BigDecimal.ZERO));
+        BigDecimal todayFcyDr = nvl(tranTableRepository.sumVerifiedDebitFcyByGlAndCcyAndDate(positionFcyGl, currencyCode, today));
+        BigDecimal todayFcyCr = nvl(tranTableRepository.sumVerifiedCreditFcyByGlAndCcyAndDate(positionFcyGl, currencyCode, today));
+        BigDecimal currentFcyBalance = prevClosingFcy.add(todayFcyCr).subtract(todayFcyDr);
+
+        BigDecimal prevClosingLcy = glBalanceRepository.findByGlNumAndTranDate(positionBdtGl, previousDate)
+                .map(gl -> nvl(gl.getClosingBal()))
+                .orElseGet(() -> glBalanceRepository.findByGlNumAndTranDateBeforeOrderByTranDateDesc(positionBdtGl, today).stream()
+                        .findFirst()
+                        .map(gl -> nvl(gl.getClosingBal()))
+                        .orElse(BigDecimal.ZERO));
+        BigDecimal todayLcyDr = nvl(tranTableRepository.sumDebitAmountByGlAndCcyAndDate(positionBdtGl, "BDT", today));
+        BigDecimal todayLcyCr = nvl(tranTableRepository.sumCreditAmountByGlAndCcyAndDate(positionBdtGl, "BDT", today));
+        BigDecimal currentLcyBalance = prevClosingLcy.add(todayLcyCr).subtract(todayLcyDr);
+
+        log.info("Position WAE2 inputs: currency={} prevFcy={} todayCrFcy={} todayDrFcy={} currentFcy={} prevLcy={} todayCrLcy={} todayDrLcy={} currentLcy={}",
+                currencyCode, prevClosingFcy, todayFcyCr, todayFcyDr, currentFcyBalance,
+                prevClosingLcy, todayLcyCr, todayLcyDr, currentLcyBalance);
+
+        if (currentFcyBalance.compareTo(BigDecimal.ZERO) == 0) {
+            log.warn("Position WAE2 unavailable for {}: FCY balance is zero", currencyCode);
+            return null;
+        }
+
+        BigDecimal wae2 = currentLcyBalance.divide(currentFcyBalance, 4, RoundingMode.HALF_UP);
+        log.info("Position WAE2 on-the-fly: currency={} fcy={} lcy={} wae2={}",
+                currencyCode, currentFcyBalance, currentLcyBalance, wae2);
+        return wae2;
+    }
+
+    private BigDecimal nvl(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 
     public List<CustAcctMaster> searchCustomerAccounts(String search) {

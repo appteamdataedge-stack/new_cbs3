@@ -42,6 +42,7 @@ public class EODStep8ConsolidatedReportService {
     private final AcctBalRepository acctBalRepository;
     private final AcctBalLcyRepository acctBalLcyRepository;
     private final TranTableRepository tranTableRepository;
+    private final FxPositionRepository fxPositionRepository;
     private final SystemDateService systemDateService;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
@@ -77,7 +78,11 @@ public class EODStep8ConsolidatedReportService {
             log.info("Generating Sheet 4: Account Balance Report");
             generateAccountBalanceReport(workbook, eodDate);
 
-            // Sheets 5+: Account Balance Report (one sheet per subproduct)
+            // Sheet 5: FX Position Report
+            log.info("Generating Sheet 5: FX Position Report");
+            createFxPositionReportSheet(workbook, eodDate);
+
+            // Sheets 6+: Account Balance Report (one sheet per subproduct)
             log.info("Generating Account Balance Report sheets (one per subproduct)");
             generateAccountBalanceSheets(workbook, eodDate, subproductSheetIndex);
 
@@ -105,6 +110,7 @@ public class EODStep8ConsolidatedReportService {
 
         ensureFxGLsPresent(glBalances, eodDate);
         ensurePositionGLsPresent(glBalances, eodDate);
+        // Trial Balance must be sourced from gl_balance only.
         glBalances.sort(Comparator.comparing(GLBalance::getGlNum));
 
         CellStyle headerStyle = createHeaderStyle(workbook);
@@ -139,8 +145,8 @@ public class EODStep8ConsolidatedReportService {
             String glName = getGLName(glBalance.getGlNum());
 
             BigDecimal opening = nvl(glBalance.getOpeningBal());
-            BigDecimal dr = nvl(glBalance.getDrSummation());
-            BigDecimal cr = nvl(glBalance.getCrSummation());
+            BigDecimal dr = nvl(glBalance.getDrSummation()).abs();
+            BigDecimal cr = nvl(glBalance.getCrSummation()).abs();
             BigDecimal closing = nvl(glBalance.getClosingBal());
 
             createStyledCell(row, 0, glBalance.getGlNum(), dataStyle);
@@ -294,8 +300,8 @@ public class EODStep8ConsolidatedReportService {
         // DIFFERENCE / balance check row
         int diffRowIdx = rowNum;
         Row diffRow = sheet.createRow(rowNum++);
-        createStyledCell(diffRow, 0, "DIFFERENCE (Assets - Liabilities)", totalStyle);
-        setFormula(diffRow, 1, String.format("G%d-C%d", totalRowIdx + 1, totalRowIdx + 1), totalStyle);
+        createStyledCell(diffRow, 0, "DIFFERENCE (Assets + Liabilities)", totalStyle);
+        setFormula(diffRow, 1, String.format("G%d+C%d", totalRowIdx + 1, totalRowIdx + 1), totalStyle);
         createStyledCell(diffRow, 4, "Status:", totalStyle);
         setFormula(
                 diffRow,
@@ -1067,7 +1073,7 @@ public class EODStep8ConsolidatedReportService {
                 
                 if (!positionBalances.isEmpty()) {
                     // Found balance(s) for exact date - add all currencies
-                    positionBalances.forEach(balance -> {
+                    new ArrayList<>(positionBalances).forEach(balance -> {
                         log.info("Found Position account {} on {}: Opening={}, DR={}, CR={}, Closing={}", 
                                 glNum, date,
                                 balance.getOpeningBal(),
@@ -1104,6 +1110,60 @@ public class EODStep8ConsolidatedReportService {
                 log.debug("Position account {} already in result list", glNum);
             }
         });
+    }
+
+    private void injectFxPositionRows(List<GLBalance> glBalances, LocalDate eodDate) {
+        List<FxPosition> fxPositions = fxPositionRepository.findFcyByTranDate(eodDate);
+        for (FxPosition fp : fxPositions) {
+            glBalances.add(GLBalance.builder()
+                    .glNum(fp.getPositionGlNum())
+                    .tranDate(eodDate)
+                    .openingBal(nvl(fp.getOpeningBal()))
+                    .drSummation(nvl(fp.getDrSummation()))
+                    .crSummation(nvl(fp.getCrSummation()))
+                    .closingBal(nvl(fp.getClosingBal()))
+                    .currentBalance(nvl(fp.getClosingBal()))
+                    .build());
+        }
+        if (!fxPositions.isEmpty()) {
+            log.info("Injected {} trial-balance Position FCY rows from fx_position", fxPositions.size());
+        }
+    }
+
+    private void createFxPositionReportSheet(XSSFWorkbook workbook, LocalDate eodDate) {
+        Sheet sheet = workbook.createSheet("FX Position Report");
+        CellStyle headerStyle = createColumnHeaderStyle(workbook);
+        CellStyle numberStyle = createNumberStyle(workbook);
+        CellStyle dataStyle = createDataStyle(workbook);
+
+        Row headerRow = sheet.createRow(0);
+        String[] headers = {"GL Code", "GL Name", "Currency", "Opening Balance", "DR Summation", "CR Summation", "Closing Balance"};
+        for (int i = 0; i < headers.length; i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        List<FxPosition> fxRows = fxPositionRepository.findFcyByTranDate(eodDate);
+        fxRows.sort(Comparator.comparing(FxPosition::getPositionGlNum).thenComparing(FxPosition::getPositionCcy));
+
+        int rowNum = 1;
+        for (FxPosition fp : fxRows) {
+            Row row = sheet.createRow(rowNum++);
+            createStyledCell(row, 0, fp.getPositionGlNum(), dataStyle);
+            createStyledCell(row, 1, getGLName(fp.getPositionGlNum()), dataStyle);
+            createStyledCell(row, 2, fp.getPositionCcy(), dataStyle);
+            createStyledNumericCell(row, 3, nvl(fp.getOpeningBal()), numberStyle);
+            createStyledNumericCell(row, 4, nvl(fp.getDrSummation()), numberStyle);
+            createStyledNumericCell(row, 5, nvl(fp.getCrSummation()), numberStyle);
+            createStyledNumericCell(row, 6, nvl(fp.getClosingBal()), numberStyle);
+        }
+
+        for (int i = 0; i < headers.length; i++) {
+            sheet.autoSizeColumn(i);
+            sheet.setColumnWidth(i, sheet.getColumnWidth(i) + 800);
+        }
+        log.info("FX Position Report sheet generated: {} rows", fxRows.size());
     }
 
     private CellStyle createHeaderStyle(Workbook workbook) {

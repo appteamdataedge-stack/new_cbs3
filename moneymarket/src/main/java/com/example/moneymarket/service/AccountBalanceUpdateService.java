@@ -43,6 +43,7 @@ public class AccountBalanceUpdateService {
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final OFAcctMasterRepository ofAcctMasterRepository;
     private final TranTableRepository tranTableRepository;
+    private final FxPositionRepository fxPositionRepository;
     private final SystemDateService systemDateService;
     private final ExchangeRateService exchangeRateService;
 
@@ -59,6 +60,7 @@ public class AccountBalanceUpdateService {
             CustAcctMasterRepository custAcctMasterRepository,
             OFAcctMasterRepository ofAcctMasterRepository,
             TranTableRepository tranTableRepository,
+            FxPositionRepository fxPositionRepository,
             SystemDateService systemDateService,
             ExchangeRateService exchangeRateService,
             @org.springframework.context.annotation.Lazy AccountBalanceUpdateService self) {
@@ -67,6 +69,7 @@ public class AccountBalanceUpdateService {
         this.custAcctMasterRepository = custAcctMasterRepository;
         this.ofAcctMasterRepository = ofAcctMasterRepository;
         this.tranTableRepository = tranTableRepository;
+        this.fxPositionRepository = fxPositionRepository;
         this.systemDateService = systemDateService;
         this.exchangeRateService = exchangeRateService;
         this.self = self;
@@ -161,6 +164,8 @@ public class AccountBalanceUpdateService {
 
         log.info("Batch Job 1 processed {} accounts", recordsProcessed);
 
+        updateFxPositionTable(processDate, lastUpdated);
+
         if (!errors.isEmpty()) {
             log.warn("Account balance update completed with {} errors: {}",
                     errors.size(), String.join("; ", errors));
@@ -169,6 +174,55 @@ public class AccountBalanceUpdateService {
 
         log.info("Batch Job 1 completed successfully. Accounts processed: {}, Failed: {}", recordsProcessed, failedAccounts.size());
         return recordsProcessed;
+    }
+
+    private void updateFxPositionTable(LocalDate processDate, LocalDateTime lastUpdated) {
+        log.info("EOD Step 1: Starting fx_position table update for date: {}", processDate);
+
+        List<Object[]> positionAccounts = tranTableRepository.findDistinctPositionAccountsForDate(processDate);
+        log.info("Found {} Position FCY account/currency combinations for fx_position update", positionAccounts.size());
+
+        for (Object[] row : positionAccounts) {
+            String glNum = row[0] != null ? row[0].toString() : null;
+            String currency = row[1] != null ? row[1].toString() : null;
+            if (glNum == null || currency == null || "BDT".equalsIgnoreCase(currency)) {
+                continue;
+            }
+
+            BigDecimal openingBal = fxPositionRepository
+                    .findByTranDateAndPositionGlNumAndPositionCcy(processDate.minusDays(1), glNum, currency)
+                    .map(FxPosition::getClosingBal)
+                    .orElse(BigDecimal.ZERO);
+
+            // fx_position stores FCY balances, so use FCY_Amt movement by DR/CR flag.
+            BigDecimal drSummation = nvl(tranTableRepository.sumVerifiedDebitFcyByGlAndCcyAndDate(glNum, currency, processDate));
+            BigDecimal crSummation = nvl(tranTableRepository.sumVerifiedCreditFcyByGlAndCcyAndDate(glNum, currency, processDate));
+            BigDecimal closingBal = openingBal.add(crSummation).subtract(drSummation);
+
+            FxPosition fxPosition = fxPositionRepository
+                    .findByTranDateAndPositionGlNumAndPositionCcy(processDate, glNum, currency)
+                    .orElseGet(() -> FxPosition.builder()
+                            .tranDate(processDate)
+                            .positionGlNum(glNum)
+                            .positionCcy(currency)
+                            .build());
+
+            fxPosition.setOpeningBal(openingBal);
+            fxPosition.setDrSummation(drSummation);
+            fxPosition.setCrSummation(crSummation);
+            fxPosition.setClosingBal(closingBal);
+            fxPosition.setLastUpdated(lastUpdated);
+
+            fxPositionRepository.save(fxPosition);
+            log.info("Upserted fx_position: GL={}, Ccy={}, Opening={}, DR={}, CR={}, Closing={}",
+                    glNum, currency, openingBal, drSummation, crSummation, closingBal);
+        }
+
+        log.info("EOD Step 1: fx_position table update completed");
+    }
+
+    private BigDecimal nvl(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 
     private Map<String, BigDecimal> buildOpeningBalanceMap(List<AcctBal> balancesBefore, LocalDate processDate) {

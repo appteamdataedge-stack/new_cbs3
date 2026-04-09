@@ -157,6 +157,55 @@ curl -X POST http://localhost:8080/api/transactions/entry \
   }'
 ```
 
+### FX Conversion - SELLING (Customer buys FCY from Bank)
+
+Creates an FXC transaction in **Entry** status (maker step). The checker posts it using `POST /api/transactions/{tranId}/post`.
+
+Endpoint:
+- `POST /api/fx-conversion/selling`
+
+Request:
+
+```json
+{
+  "transactionType": "SELLING",
+  "nostroAccountId": "922010001",
+  "customerAccountId": "110101000001",
+  "currencyCode": "USD",
+  "fcyAmount": 1000.00,
+  "dealRate": 110.0000,
+  "particulars": "FX SELLING USD",
+  "wae1": 108.0000,
+  "wae2": 109.0000
+}
+```
+
+Response (shape):
+
+```json
+{
+  "success": true,
+  "data": {
+    "tranId": "F20260408000001001",
+    "status": "Entry",
+    "tranDate": "2026-04-08",
+    "valueDate": "2026-04-08",
+    "narration": "FX SELLING USD",
+    "balanced": true,
+    "settlementGainLoss": 2000.00,
+    "settlementGainLossType": "GAIN",
+    "lines": [
+      { "tranId": "F...-1", "accountNo": "922010001", "drCrFlag": "C", "tranCcy": "USD", "fcyAmt": 1000.00, "exchangeRate": 108.0000, "lcyAmt": 108000.00, "glNum": "92201xxxx", "udf1": "..." },
+      { "tranId": "F...-2", "accountNo": "920101002", "drCrFlag": "D", "tranCcy": "USD", "fcyAmt": 1000.00, "exchangeRate": 109.0000, "lcyAmt": 109000.00, "glNum": "920101002", "udf1": "..." },
+      { "tranId": "F...-3", "accountNo": "920101001", "drCrFlag": "C", "tranCcy": "BDT", "fcyAmt": 109000.00, "exchangeRate": 1.0000, "lcyAmt": 109000.00, "glNum": "920101001", "udf1": "..." },
+      { "tranId": "F...-4", "accountNo": "140203001", "drCrFlag": "C", "tranCcy": "BDT", "fcyAmt": 2000.00, "exchangeRate": 1.0000, "lcyAmt": 2000.00, "glNum": "140203001", "udf1": "..." },
+      { "tranId": "F...-5", "accountNo": "110101000001", "drCrFlag": "D", "tranCcy": "BDT", "fcyAmt": 110000.00, "exchangeRate": 1.0000, "lcyAmt": 110000.00, "glNum": "1101....", "udf1": "..." }
+    ]
+  },
+  "message": "FX SELLING transaction created successfully (Entry status - pending approval)"
+}
+```
+
 ### Run EOD Process Manually
 
 ```bash

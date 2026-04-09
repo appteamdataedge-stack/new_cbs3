@@ -103,6 +103,42 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
      */
     List<TranTable> findByAccountNoInAndTranDate(java.util.Collection<String> accountNos, LocalDate tranDate);
 
+    @Query(value = "SELECT DISTINCT GL_Num, Tran_Ccy FROM Tran_Table " +
+            "WHERE GL_Num LIKE '920101%' AND Tran_Ccy <> 'BDT' AND Tran_Date = :tranDate AND Tran_Status = 'Verified' " +
+            "ORDER BY GL_Num, Tran_Ccy",
+            nativeQuery = true)
+    List<Object[]> findDistinctPositionAccountsForDate(@Param("tranDate") LocalDate tranDate);
+
+    @Query(value = "SELECT COALESCE(SUM(Debit_Amount), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate AND Tran_Status = 'Verified'",
+            nativeQuery = true)
+    BigDecimal sumDebitAmountByGlAndCcyAndDate(@Param("glNum") String glNum,
+                                               @Param("tranCcy") String tranCcy,
+                                               @Param("tranDate") LocalDate tranDate);
+
+    @Query(value = "SELECT COALESCE(SUM(Credit_Amount), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate AND Tran_Status = 'Verified'",
+            nativeQuery = true)
+    BigDecimal sumCreditAmountByGlAndCcyAndDate(@Param("glNum") String glNum,
+                                                @Param("tranCcy") String tranCcy,
+                                                @Param("tranDate") LocalDate tranDate);
+
+    @Query(value = "SELECT COALESCE(SUM(FCY_Amt), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate " +
+            "AND Dr_Cr_Flag = 'D' AND Tran_Status = 'Verified'",
+            nativeQuery = true)
+    BigDecimal sumVerifiedDebitFcyByGlAndCcyAndDate(@Param("glNum") String glNum,
+                                                    @Param("tranCcy") String tranCcy,
+                                                    @Param("tranDate") LocalDate tranDate);
+
+    @Query(value = "SELECT COALESCE(SUM(FCY_Amt), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate " +
+            "AND Dr_Cr_Flag = 'C' AND Tran_Status = 'Verified'",
+            nativeQuery = true)
+    BigDecimal sumVerifiedCreditFcyByGlAndCcyAndDate(@Param("glNum") String glNum,
+                                                     @Param("tranCcy") String tranCcy,
+                                                     @Param("tranDate") LocalDate tranDate);
+
     /**
      * Find transactions with value date gap (Tran_Date > Value_Date)
      * Used by Batch Job 1 to calculate value date interest

@@ -10,6 +10,8 @@ C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\CreateExc
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\ProductService.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\TransactionService.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\SystemDateService.java
+C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\controller\FxConversionSellingController.java
+C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\repository\FxPositionRepository.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\repository\GLMovementAccrualRepository.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\controller\AccountBalanceController.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\controller\SubProductGLReconciliationController.java
@@ -18,6 +20,7 @@ C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\repository\Cu
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\AccountService.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\MoneyMarketApplication.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\InterestCapitalizationService.java
+C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\entity\FxPosition.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\controller\CustomerController.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\TransactionRequestDTO.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\entity\AccountSeq.java
@@ -138,6 +141,7 @@ C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\EODSt
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\SubProductRequestDTO.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\InterestRateResponseDTO.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\service\RevaluationService.java
+C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\FxConversionRequest.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\CustomerAccountRequestDTO.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\MultiCurrencyTransactionRequest.java
 C:\new_cbs3\cbs3\moneymarket\src\main\java\com\example\moneymarket\dto\AccountOptionDTO.java

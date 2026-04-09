@@ -128,7 +128,7 @@ const EOD = () => {
       id: 1,
       name: "Account Balance Update",
       sourceTable: "Tran Table",
-      targetTable: "Account Balance Table",
+      targetTable: "Account Balance Tables (acct_bal, acct_bal_lcy, fx_position)",
       keyOperations: "Update balances for all accounts"
     },
     {

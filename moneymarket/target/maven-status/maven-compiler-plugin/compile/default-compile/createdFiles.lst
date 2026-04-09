@@ -18,6 +18,7 @@ com\example\moneymarket\entity\WaeMaster.class
 com\example\moneymarket\dto\AccountOptionDTO$AccountOptionDTOBuilder.class
 com\example\moneymarket\repository\ProdMasterRepository.class
 com\example\moneymarket\service\SubProductGLReconciliationService$GLPostingDetail$GLPostingDetailBuilder.class
+com\example\moneymarket\entity\FxPosition.class
 com\example\moneymarket\service\EODJobManagementService$1.class
 com\example\moneymarket\dto\CustomerAccountResponseDTO$CustomerAccountResponseDTOBuilder.class
 com\example\moneymarket\entity\EODLogTable$EODLogTableBuilder.class
@@ -34,6 +35,7 @@ com\example\moneymarket\entity\AcctBal.class
 com\example\moneymarket\service\AccountBalanceUpdateService.class
 com\example\moneymarket\controller\SettlementReportController.class
 com\example\moneymarket\dto\OfficeAccountResponseDTO$OfficeAccountResponseDTOBuilder.class
+com\example\moneymarket\dto\FxConversionRequest.class
 com\example\moneymarket\entity\GLMovementAccrual.class
 com\example\moneymarket\controller\EODController.class
 com\example\moneymarket\scheduler\BODScheduler$BODStatus.class
@@ -53,6 +55,7 @@ com\example\moneymarket\entity\OFAcctMaster$AccountStatus.class
 com\example\moneymarket\entity\RevalTran.class
 com\example\moneymarket\dto\TransactionLineResponseDTO.class
 com\example\moneymarket\service\MultiCurrencyTransactionService.class
+com\example\moneymarket\repository\FxPositionRepository.class
 com\example\moneymarket\dto\TransactionLineDTO$TransactionLineDTOBuilder.class
 com\example\moneymarket\repository\FxRateMasterRepository.class
 com\example\moneymarket\service\CustomerAccountService.class
@@ -128,6 +131,7 @@ com\example\moneymarket\dto\UpdateExchangeRateRequest$UpdateExchangeRateRequestB
 com\example\moneymarket\dto\TransactionRequestDTO$TransactionRequestDTOBuilder.class
 com\example\moneymarket\service\EODStep8ConsolidatedReportService$SubproductBalanceData$SubproductBalanceDataBuilder.class
 com\example\moneymarket\scheduler\BODScheduler$BODResult.class
+com\example\moneymarket\entity\FxPosition$FxPositionBuilder.class
 com\example\moneymarket\service\SettlementReportService$PeriodSettlementReport$PeriodSettlementReportBuilder.class
 com\example\moneymarket\dto\AccountDetailsDTO.class
 com\example\moneymarket\service\InterestAccrualService.class
@@ -139,6 +143,7 @@ com\example\moneymarket\dto\InterestCapitalizationRequestDTO$InterestCapitalizat
 com\example\moneymarket\validation\CustomerValidator.class
 com\example\moneymarket\controller\GLStatementController.class
 com\example\moneymarket\service\AccountNumberService.class
+com\example\moneymarket\controller\FxConversionSellingController.class
 com\example\moneymarket\controller\OfficeAccountController.class
 com\example\moneymarket\dto\SubProductGLBalanceReportDTO.class
 com\example\moneymarket\service\FinancialReportsService.class
@@ -159,6 +164,7 @@ com\example\moneymarket\dto\CreateExchangeRateRequest$CreateExchangeRateRequestB
 com\example\moneymarket\service\EODStep8ConsolidatedReportService$AccountBalanceDetail$AccountBalanceDetailBuilder.class
 com\example\moneymarket\service\GLReconciliationService$ReconciliationEntry.class
 com\example\moneymarket\service\SubProductService.class
+com\example\moneymarket\service\FxConversionService$SellingGainLossBreakdown.class
 com\example\moneymarket\service\BalanceService.class
 com\example\moneymarket\service\SubProductGLReconciliationService$AccountBalanceSummary.class
 com\example\moneymarket\controller\InterestCapitalizationController.class
@@ -217,6 +223,7 @@ com\example\moneymarket\dto\SubProductGLBalanceReportDTO$SubProductGLBalanceRepo
 com\example\moneymarket\entity\AcctBalAccrual$AcctBalAccrualBuilder.class
 com\example\moneymarket\dto\AccountBalanceDTO$AccountBalanceDTOBuilder.class
 com\example\moneymarket\dto\AccountBalanceDTO.class
+com\example\moneymarket\dto\FxConversionRequest$FxConversionRequestBuilder.class
 com\example\moneymarket\service\EODReportingService$GLBalanceData.class
 com\example\moneymarket\entity\GLSetup.class
 com\example\moneymarket\service\SettlementAlertService$SettlementAlert$SettlementAlertBuilder.class

@@ -86,7 +86,12 @@ public class FxConversionController {
             BigDecimal waeRate;
 
             if (nostroAccount != null && !nostroAccount.isBlank()) {
-                waeRate = fxConversionService.calculateWaeFromTranTable(nostroAccount, currencyCode);
+                String positionGlNum = fxConversionService.getPositionFcyGlNumForCurrency(currencyCode);
+                if (positionGlNum.equals(nostroAccount)) {
+                    waeRate = fxConversionService.calculatePositionWae2OnTheFly(currencyCode);
+                } else {
+                    waeRate = fxConversionService.calculateWaeFromTranTable(nostroAccount, currencyCode);
+                }
             } else {
                 waeRate = fxConversionService.calculateAggregateWaeFromTranTable(currencyCode);
             }
@@ -98,6 +103,7 @@ public class FxConversionController {
             data.put("waeRate", waeRate);
             if (nostroAccount != null && !nostroAccount.isBlank()) {
                 data.put("nostroAccount", nostroAccount);
+                data.put("positionGlNum", fxConversionService.getPositionFcyGlNumForCurrency(currencyCode));
             }
 
             Map<String, Object> response = new HashMap<>();

@@ -40,6 +40,16 @@ import {
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY'];
 
+const getPositionGlNum = (currency: string): string => {
+  const positionGlMap: Record<string, string> = {
+    USD: '920101002',
+    EUR: '920101003',
+    GBP: '920101004',
+    JPY: '920101005',
+  };
+  return positionGlMap[currency] || '920101002';
+};
+
 const FxConversionForm = () => {
   const navigate = useNavigate();
 
@@ -51,8 +61,10 @@ const FxConversionForm = () => {
   const [dealRate, setDealRate] = useState<string>('');
 
   const [midRate, setMidRate] = useState<number | null>(null);
-  const [waeRate, setWaeRate] = useState<number | null>(null);
-  const [waeDisplay, setWaeDisplay] = useState<string>('');
+  const [wae1Rate, setWae1Rate] = useState<number | null>(null);
+  const [wae2Rate, setWae2Rate] = useState<number | null>(null);
+  const [wae1Display, setWae1Display] = useState<string>('');
+  const [wae2Display, setWae2Display] = useState<string>('');
 
   const [customerAccounts, setCustomerAccounts] = useState<CustomerAccountOption[]>([]);
   const [nostroAccounts, setNostroAccounts] = useState<NostroAccountOption[]>([]);
@@ -74,8 +86,10 @@ const FxConversionForm = () => {
       fetchMidRateOnly();
       fetchNostroAccounts();
       // Reset WAE when currency changes (requires Nostro selection)
-      setWaeRate(null);
-      setWaeDisplay('');
+      setWae1Rate(null);
+      setWae2Rate(null);
+      setWae1Display('');
+      setWae2Display('');
     }
   }, [currencyCode]);
 
@@ -83,10 +97,19 @@ const FxConversionForm = () => {
     if (currencyCode && nostroAccountNo) {
       fetchWaeForNostro(nostroAccountNo);
     } else {
-      setWaeRate(null);
-      setWaeDisplay('');
+      setWae1Rate(null);
+      setWae1Display('');
     }
   }, [nostroAccountNo, currencyCode]);
+
+  useEffect(() => {
+    if (transactionType === 'SELLING' && currencyCode) {
+      fetchWaeForPosition(currencyCode);
+    } else {
+      setWae2Rate(null);
+      setWae2Display('');
+    }
+  }, [transactionType, currencyCode]);
 
   const fetchCustomerAccounts = async (search: string) => {
     try {
@@ -144,17 +167,38 @@ const FxConversionForm = () => {
       const waeRes = await fxConversionApi.getWaeRate(currencyCode, nostroAccNo);
       console.log('WAE response:', waeRes);
       if (waeRes.hasWae && waeRes.waeRate != null) {
-        setWaeRate(waeRes.waeRate);
-        setWaeDisplay(waeRes.waeRate.toFixed(6));
+        setWae1Rate(waeRes.waeRate);
+        setWae1Display(Math.abs(waeRes.waeRate).toFixed(4));
       } else {
         // Observation #2: Nostro has zero FCY balance — WAE is N/A, transaction still allowed
-        setWaeRate(null);
-        setWaeDisplay('N/A');
+        setWae1Rate(null);
+        setWae1Display('N/A');
       }
     } catch (error) {
       console.error('Failed to fetch WAE:', error);
-      setWaeRate(null);
-      setWaeDisplay('N/A');
+      setWae1Rate(null);
+      setWae1Display('N/A');
+    } finally {
+      setLoadingRates(false);
+    }
+  };
+
+  const fetchWaeForPosition = async (ccy: string) => {
+    try {
+      setLoadingRates(true);
+      const positionGl = getPositionGlNum(ccy);
+      const waeRes = await fxConversionApi.getWaeRate(ccy, positionGl);
+      if (waeRes.hasWae && waeRes.waeRate != null) {
+        setWae2Rate(waeRes.waeRate);
+        setWae2Display(Math.abs(waeRes.waeRate).toFixed(4));
+      } else {
+        setWae2Rate(null);
+        setWae2Display('N/A');
+      }
+    } catch (error) {
+      console.error('Failed to fetch WAE2 (Position):', error);
+      setWae2Rate(null);
+      setWae2Display('N/A');
     } finally {
       setLoadingRates(false);
     }
@@ -172,9 +216,33 @@ const FxConversionForm = () => {
     setNostroAccountNo('');
     setDealRate('');
     setMidRate(null);
-    setWaeRate(null);
-    setWaeDisplay('');
+    setWae1Rate(null);
+    setWae2Rate(null);
+    setWae1Display('');
+    setWae2Display('');
   };
+
+  const sellingProjection = useMemo(() => {
+    if (transactionType !== 'SELLING') return null;
+    const fcy = parseFloat(fcyAmount);
+    const deal = parseFloat(dealRate);
+    if (!fcy || !deal || !midRate) return null;
+
+    const wae1 = wae1Rate != null ? Math.abs(wae1Rate) : null;
+    const wae2 = wae2Rate != null ? Math.abs(wae2Rate) : null;
+
+    const lcyEquiv = +(fcy * deal).toFixed(2);
+    const lcyEquiv1 = wae2 != null ? +(fcy * wae2).toFixed(2) : 0;
+    const lcyEquiv2 = wae1 != null ? +(fcy * wae1).toFixed(2) : 0;
+
+    // If WAE2 is N/A, there is no Position FCY relief basis -> position component must be zero.
+    const positionComponent = wae2 != null ? +(fcy * (deal - wae2)).toFixed(2) : 0;
+    // Nostro component requires both WAE1 and WAE2 to exist.
+    const nostroComponent = wae1 != null && wae2 != null ? +(fcy * (wae2 - wae1)).toFixed(2) : 0;
+    const net = +(nostroComponent + positionComponent).toFixed(2);
+
+    return { wae1, wae2, lcyEquiv, lcyEquiv1, lcyEquiv2, nostroComponent, positionComponent, net };
+  }, [transactionType, fcyAmount, dealRate, wae1Rate, wae2Rate, midRate]);
 
   const calculatePreview = (): LedgerEntry[] => {
     const fcy = parseFloat(fcyAmount);
@@ -226,12 +294,16 @@ const FxConversionForm = () => {
         },
       ];
     } else {
-      // SELLING mode: WAE can be null (N/A) — use midRate as fallback (matches backend logic)
-      const effectiveWae = waeRate ?? midRate ?? 0;
-      const lcyEquiv1 = fcy * effectiveWae;
-      const comparison = deal - effectiveWae;
+      const wae1 = wae1Rate ?? midRate ?? 0;
+      const wae2 = wae2Rate ?? midRate ?? 0;
 
-      // Steps 1-3 are always present; Step 4 (gain/loss) is conditional; Step 5 is always present
+      const lcyEquiv1 = fcy * wae2;
+      const lcyEquiv2 = fcy * wae1;
+
+      const nostroComponent = fcy * (wae2 - wae1);
+      const positionComponent = fcy * (deal - wae2);
+      const net = nostroComponent + positionComponent;
+
       const baseEntries: LedgerEntry[] = [
         {
           stepNumber: 1,
@@ -240,8 +312,8 @@ const FxConversionForm = () => {
           accountNo: nostroAccountNo,
           currencyCode: currencyCode,
           amount: fcy,
-          rateUsed: effectiveWae,
-          lcyEquivalent: lcyEquiv1,
+          rateUsed: wae1,
+          lcyEquivalent: lcyEquiv2,
         },
         {
           stepNumber: 2,
@@ -249,7 +321,7 @@ const FxConversionForm = () => {
           accountType: 'Position FCY',
           currencyCode: currencyCode,
           amount: fcy,
-          rateUsed: effectiveWae,
+          rateUsed: wae2,
           lcyEquivalent: lcyEquiv1,
         },
         {
@@ -263,7 +335,7 @@ const FxConversionForm = () => {
         },
       ];
 
-      if (Math.abs(comparison) < 0.000001) {
+      if (Math.abs(net) < 0.000001) {
         // No gain/loss — Customer is Step 4
         return [
           ...baseEntries,
@@ -278,8 +350,8 @@ const FxConversionForm = () => {
             lcyEquivalent: lcyEquiv,
           },
         ];
-      } else if (comparison > 0) {
-        const gainAmount = fcy * (deal - effectiveWae);
+      } else if (net > 0) {
+        const gainAmount = net;
         return [
           ...baseEntries,
           {
@@ -303,7 +375,7 @@ const FxConversionForm = () => {
           },
         ];
       } else {
-        const lossAmount = fcy * (effectiveWae - deal);
+        const lossAmount = Math.abs(net);
         return [
           ...baseEntries,
           {
@@ -360,9 +432,14 @@ const FxConversionForm = () => {
         fcyAmount: parseFloat(fcyAmount),
         dealRate: parseFloat(dealRate),
         particulars: `FX ${transactionType} ${currencyCode}`, // Add description
+        wae1: wae1Rate,
+        wae2: wae2Rate,
       };
 
-      const response = await fxConversionApi.processConversion(request);
+      const response =
+        transactionType === 'SELLING'
+          ? await fxConversionApi.createSellingTransaction(request)
+          : await fxConversionApi.processConversion(request);
 
       toast.success(`FX Transaction created. ID: ${response.tranId}. Status: ${response.status} (Pending Approval)`);
       setShowConfirmModal(false);
@@ -382,8 +459,10 @@ const FxConversionForm = () => {
     setFcyAmount('');
     setDealRate('');
     setMidRate(null);
-    setWaeRate(null);
-    setWaeDisplay('');
+    setWae1Rate(null);
+    setWae2Rate(null);
+    setWae1Display('');
+    setWae2Display('');
   };
 
   const selectedCustomerAccount = useMemo(() => {
@@ -402,17 +481,15 @@ const FxConversionForm = () => {
 
   const hasGainLoss = useMemo(() => {
     if (transactionType === 'BUYING' || !dealRate || !midRate) return false;
-    const effectiveWae = waeRate ?? midRate;
-    const deal = parseFloat(dealRate);
-    return Math.abs(deal - effectiveWae) > 0.000001;
-  }, [transactionType, dealRate, waeRate, midRate]);
+    if (!sellingProjection) return false;
+    return Math.abs(sellingProjection.net) > 0.000001;
+  }, [transactionType, dealRate, midRate, sellingProjection]);
 
   const gainLossType = useMemo(() => {
     if (!hasGainLoss || !dealRate || !midRate) return null;
-    const effectiveWae = waeRate ?? midRate;
-    const deal = parseFloat(dealRate);
-    return deal > effectiveWae ? 'GAIN' : 'LOSS';
-  }, [hasGainLoss, dealRate, waeRate, midRate]);
+    if (!sellingProjection) return null;
+    return sellingProjection.net > 0 ? 'GAIN' : 'LOSS';
+  }, [hasGainLoss, sellingProjection, dealRate, midRate]);
 
   return (
     <Box>
@@ -559,13 +636,13 @@ const FxConversionForm = () => {
               <TextField
                 label="WAE Rate"
                 fullWidth
-                value={waeDisplay}
+                value={wae1Display}
                 InputProps={{
                   readOnly: true,
                 }}
                 disabled
                 helperText={
-                  waeDisplay === 'N/A'
+                  wae1Display === 'N/A'
                     ? 'Nostro FCY balance is zero — using Mid Rate as fallback'
                     : nostroAccountNo
                     ? 'Calculated from Nostro account transactions'
@@ -573,6 +650,50 @@ const FxConversionForm = () => {
                 }
               />
             </Grid>
+
+            {transactionType === 'SELLING' && (
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label={`WAE2 Rate (Position ${currencyCode} - ${getPositionGlNum(currencyCode)})`}
+                  fullWidth
+                  value={wae2Display}
+                  InputProps={{ readOnly: true }}
+                  disabled
+                  helperText={
+                    wae2Display === 'N/A'
+                      ? 'Position FCY balance is zero — using Mid Rate as fallback'
+                      : 'Calculated from on-the-fly calculation like Nostro WAE'
+                  }
+                />
+              </Grid>
+            )}
+
+            {transactionType === 'SELLING' && sellingProjection && (
+              <Grid item xs={12}>
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Gain/Loss Projection (SELLING)
+                  </Typography>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={4}>
+                      <Typography variant="body2">
+                        Nostro component: {sellingProjection.nostroComponent.toFixed(2)}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <Typography variant="body2">
+                        Position component: {sellingProjection.positionComponent.toFixed(2)}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                        Net: {sellingProjection.net.toFixed(2)} ({sellingProjection.net > 0 ? 'GAIN' : sellingProjection.net < 0 ? 'LOSS' : 'EVEN'})
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </Grid>
+            )}
           </Grid>
         </Paper>
 

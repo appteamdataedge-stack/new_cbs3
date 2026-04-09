@@ -11,6 +11,8 @@ export interface FxConversionRequest {
   fcyAmount: number;
   dealRate: number;
   particulars?: string;      // Added optional field
+  wae1?: number | null;
+  wae2?: number | null;
 }
 
 export interface LedgerEntry {
@@ -74,9 +76,11 @@ export interface FxWaeResponse {
   hasWae: boolean;
   calculationDate?: string;
   nostroAccount?: string;
+  positionGlNum?: string;
 }
 
 const FX_ENDPOINT = '/fx';
+const FX_CONVERSION_ENDPOINT = '/fx-conversion';
 
 export const fxConversionApi = {
   getMidRate: async (currencyCode: string): Promise<FxRateResponse> => {
@@ -142,6 +146,24 @@ export const fxConversionApi = {
       return response.data;
     } else {
       throw new Error(response.message || 'FX Conversion failed');
+    }
+  },
+
+  createSellingTransaction: async (request: FxConversionRequest): Promise<FxConversionResponse> => {
+    const response = await apiRequest<{
+      success: boolean;
+      data: FxConversionResponse;
+      message: string;
+    }>({
+      method: 'POST',
+      url: `${FX_CONVERSION_ENDPOINT}/selling`,
+      data: request,
+    });
+
+    if (response.success && response.data) {
+      return response.data;
+    } else {
+      throw new Error(response.message || 'FX SELLING failed');
     }
   },
 };
