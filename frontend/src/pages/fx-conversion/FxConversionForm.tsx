@@ -186,11 +186,11 @@ const FxConversionForm = () => {
   const fetchWaeForPosition = async (ccy: string) => {
     try {
       setLoadingRates(true);
-      const positionGl = getPositionGlNum(ccy);
-      const waeRes = await fxConversionApi.getWaeRate(ccy, positionGl);
-      if (waeRes.hasWae && waeRes.waeRate != null) {
-        setWae2Rate(waeRes.waeRate);
-        setWae2Display(Math.abs(waeRes.waeRate).toFixed(4));
+      const waeRes = await fxConversionApi.getPositionWae2(ccy);
+      if (waeRes.hasWae && waeRes.wae2 != null) {
+        const absVal = Math.abs(waeRes.wae2);
+        setWae2Rate(absVal);
+        setWae2Display(absVal.toFixed(4));
       } else {
         setWae2Rate(null);
         setWae2Display('N/A');
@@ -443,6 +443,9 @@ const FxConversionForm = () => {
 
       toast.success(`FX Transaction created. ID: ${response.tranId}. Status: ${response.status} (Pending Approval)`);
       setShowConfirmModal(false);
+      if (transactionType === 'SELLING') {
+        await fetchWaeForPosition(currencyCode);
+      }
       resetForm();
       navigate('/transactions');
     } catch (error) {

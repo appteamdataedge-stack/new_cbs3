@@ -79,6 +79,13 @@ export interface FxWaeResponse {
   positionGlNum?: string;
 }
 
+export interface FxPositionWaeResponse {
+  currency: string;
+  wae2: number | null;
+  wae2Raw?: number | null;
+  hasWae: boolean;
+}
+
 const FX_ENDPOINT = '/fx';
 const FX_CONVERSION_ENDPOINT = '/fx-conversion';
 
@@ -99,6 +106,15 @@ export const fxConversionApi = {
       url: `${FX_ENDPOINT}/wae/${currencyCode}${params}`,
     });
     // Backend wraps response in { success, data }
+    return response.data;
+  },
+
+  /** Intraday position WAE2 (SELLING); includes Entry/Posted/Verified for current date. */
+  getPositionWae2: async (currencyCode: string): Promise<FxPositionWaeResponse> => {
+    const response = await apiRequest<{ success: boolean; data: FxPositionWaeResponse }>({
+      method: 'GET',
+      url: `${FX_CONVERSION_ENDPOINT}/position-wae?currency=${encodeURIComponent(currencyCode)}`,
+    });
     return response.data;
   },
 

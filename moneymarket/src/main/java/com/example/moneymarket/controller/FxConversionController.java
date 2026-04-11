@@ -125,6 +125,33 @@ public class FxConversionController {
     }
 
     /**
+     * Real-time position WAE2 for SELLING (same logic as {@code /api/fx-conversion/position-wae}).
+     */
+    @GetMapping("/position-wae")
+    public ResponseEntity<?> getPositionWae(@RequestParam String currency) {
+        log.info("GET /api/fx/position-wae currency={}", currency);
+        try {
+            BigDecimal raw = fxConversionService.calculatePositionWae2OnTheFly(currency);
+            BigDecimal wae2 = raw != null ? raw.abs() : null;
+            Map<String, Object> data = new HashMap<>();
+            data.put("currency", currency);
+            data.put("wae2", wae2);
+            data.put("wae2Raw", raw);
+            data.put("hasWae", wae2 != null);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", data);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("ERROR in getPositionWae: {}", e.getMessage(), e);
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("message", "Failed to fetch position WAE: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
+    }
+
+    /**
      * Search Customer Accounts (BDT accounts only)
      */
     @GetMapping("/accounts/customer")

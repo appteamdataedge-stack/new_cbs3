@@ -57,9 +57,12 @@ class FxConversionServiceSellingCalculationTest {
         when(systemDateService.getSystemDate()).thenReturn(today);
         when(fxPositionRepository.findByTranDateAndPositionGlNumAndPositionCcy(today.minusDays(1), "920101002", "USD"))
                 .thenReturn(Optional.empty());
-        when(tranTableRepository.sumVerifiedDebitFcyByGlAndCcyAndDate("920101002", "USD", today))
+        when(fxPositionRepository.findTopByPositionGlNumAndPositionCcyAndTranDateLessThanOrderByTranDateDesc(
+                "920101002", "USD", today))
+                .thenReturn(Optional.empty());
+        when(tranTableRepository.sumDebitFcyByGlAndCcyAndDateForIntradayWae("920101002", "USD", today))
                 .thenReturn(BigDecimal.ZERO);
-        when(tranTableRepository.sumVerifiedCreditFcyByGlAndCcyAndDate("920101002", "USD", today))
+        when(tranTableRepository.sumCreditFcyByGlAndCcyAndDateForIntradayWae("920101002", "USD", today))
                 .thenReturn(BigDecimal.ZERO);
 
         assertNull(fxConversionService.calculatePositionWae2OnTheFly("USD"));

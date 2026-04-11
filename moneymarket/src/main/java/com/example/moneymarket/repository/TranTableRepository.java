@@ -140,6 +140,41 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
                                                      @Param("tranDate") LocalDate tranDate);
 
     /**
+     * Intraday position WAE: include Entry/Posted/Verified so WAE reflects today's activity before EOD.
+     */
+    @Query(value = "SELECT COALESCE(SUM(FCY_Amt), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate " +
+            "AND Dr_Cr_Flag = 'D' AND Tran_Status IN ('Entry', 'Posted', 'Verified')",
+            nativeQuery = true)
+    BigDecimal sumDebitFcyByGlAndCcyAndDateForIntradayWae(@Param("glNum") String glNum,
+                                                          @Param("tranCcy") String tranCcy,
+                                                          @Param("tranDate") LocalDate tranDate);
+
+    @Query(value = "SELECT COALESCE(SUM(FCY_Amt), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate " +
+            "AND Dr_Cr_Flag = 'C' AND Tran_Status IN ('Entry', 'Posted', 'Verified')",
+            nativeQuery = true)
+    BigDecimal sumCreditFcyByGlAndCcyAndDateForIntradayWae(@Param("glNum") String glNum,
+                                                           @Param("tranCcy") String tranCcy,
+                                                           @Param("tranDate") LocalDate tranDate);
+
+    @Query(value = "SELECT COALESCE(SUM(Debit_Amount), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate " +
+            "AND Tran_Status IN ('Entry', 'Posted', 'Verified')",
+            nativeQuery = true)
+    BigDecimal sumDebitAmountByGlAndCcyAndDateForIntradayWae(@Param("glNum") String glNum,
+                                                             @Param("tranCcy") String tranCcy,
+                                                             @Param("tranDate") LocalDate tranDate);
+
+    @Query(value = "SELECT COALESCE(SUM(Credit_Amount), 0) FROM Tran_Table " +
+            "WHERE GL_Num = :glNum AND Tran_Ccy = :tranCcy AND Tran_Date = :tranDate " +
+            "AND Tran_Status IN ('Entry', 'Posted', 'Verified')",
+            nativeQuery = true)
+    BigDecimal sumCreditAmountByGlAndCcyAndDateForIntradayWae(@Param("glNum") String glNum,
+                                                              @Param("tranCcy") String tranCcy,
+                                                              @Param("tranDate") LocalDate tranDate);
+
+    /**
      * Find transactions with value date gap (Tran_Date > Value_Date)
      * Used by Batch Job 1 to calculate value date interest
      *

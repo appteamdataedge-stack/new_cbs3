@@ -288,8 +288,9 @@ public class GLBalanceUpdateService {
 
         // Step b & c: Calculate DR and CR Summation (optimized - single query for each table)
         DRCRSummation summation = calculateDRCRSummation(glNum, systemDate);
-        BigDecimal drSummation = summation.drSummation;
-        BigDecimal crSummation = summation.crSummation;
+        // DR_Summation / CR_Summation are magnitudes (always stored positive); Closing_Bal may be signed.
+        BigDecimal drSummation = summation.drSummation != null ? summation.drSummation.abs() : BigDecimal.ZERO;
+        BigDecimal crSummation = summation.crSummation != null ? summation.crSummation.abs() : BigDecimal.ZERO;
 
         // Step d: Calculate Closing Balance
         // Closing_Bal = Opening_Bal + CR_Summation - DR_Summation
