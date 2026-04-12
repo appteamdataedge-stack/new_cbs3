@@ -187,7 +187,19 @@ public class TransactionService {
                     // DO NOT use stored wae_rate column (can be stale)
                     log.info("Calculating live WAE from balance fields for account {}", lineDTO.getAccountNo());
                     BigDecimal lineWae = calculateWaeWithDiagnostics(lineDTO.getAccountNo(), lineDTO.getTranCcy(), tranDate);
-                    
+
+                    // Intraday: acct_bal_lcy can exist for today but LCY columns stay zero until EOD, so backend WAE is 0/null
+                    // while the UI already computed WAE from live tran_table (same strategy as BalanceService). Use the
+                    // rate submitted on the line (exchangeRate is WAE for settlement legs in TransactionForm).
+                    if (lineWae == null || lineWae.compareTo(BigDecimal.ZERO) == 0) {
+                        BigDecimal requestRate = lineDTO.getExchangeRate();
+                        if (requestRate != null && requestRate.compareTo(BigDecimal.ZERO) > 0) {
+                            lineWae = requestRate;
+                            log.info("WAE INTRADAY FALLBACK: using client-provided rate {} for settlement account {} (backend WAE null/zero)",
+                                    lineWae, lineDTO.getAccountNo());
+                        }
+                    }
+
                     if (lineWae == null || lineWae.compareTo(BigDecimal.ZERO) == 0) {
                         throw new BusinessException(
                             "WAE not available for settlement account " + lineDTO.getAccountNo() +

@@ -686,16 +686,29 @@ const TransactionForm = () => {
     // Handle both BDT and USD currencies properly
     const formattedData = {
       ...data,
-      lines: data.lines.map(line => {
+      lines: data.lines.map((line, index) => {
         const currency = line.tranCcy || 'BDT';
 
         if (currency === 'USD') {
-          // USD: Use FCY amount, exchange rate, and calculated LCY
+          // USD: FCY + rate + LCY. Settlement legs (Liability DR / Asset CR) must send WAE from live balance
+          // so backend intraday fallback matches the UI when acct_bal_lcy is stale before EOD.
+          const isAsset = assetAccounts.get(`${index}`) ?? false;
+          const isLiability = !isAsset;
+          const isSettlementLeg =
+            (isLiability && line.drCrFlag === DrCrFlag.D) || (isAsset && line.drCrFlag === DrCrFlag.C);
+          const waeFromBalance = accountBalances.get(`${index}`)?.wae;
+          let rate = Number(line.exchangeRate) || 1;
+          if (isSettlementLeg && waeFromBalance != null) {
+            rate = waeFromBalance;
+          }
+          const exchangeRate = Math.round(rate * 10000) / 10000;
+          const fcyAmt = Math.round((Number(line.fcyAmt) || 0) * 100) / 100;
+          const lcyAmt = Math.round(fcyAmt * exchangeRate * 100) / 100;
           return {
             ...line,
-            fcyAmt: Math.round((Number(line.fcyAmt) || 0) * 100) / 100,
-            exchangeRate: Math.round((Number(line.exchangeRate) || 1) * 10000) / 10000, // 4 decimal precision
-            lcyAmt: Math.round((Number(line.lcyAmt) || 0) * 100) / 100
+            fcyAmt,
+            exchangeRate,
+            lcyAmt
           };
         } else {
           // BDT: FCY = LCY, exchange rate = 1
