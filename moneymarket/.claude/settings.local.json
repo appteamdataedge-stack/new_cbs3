@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn compile:*)",
+      "Read(//c/new_cbs3/cbs3/frontend/**)",
+      "Bash(npx tsc:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(mysql:*)",
+      "Bash(netstat -ano)",
+      "Bash(nohup mvn:*)",
+      "Bash(echo \"Started PID=$!\")",
+      "Bash(curl -s -X POST 'http://localhost:8082/api/deals/bod/execute?businessDate=2026-04-19' -H 'Content-Type: application/json')",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST 'http://localhost:8082/api/deals/bod/execute?businessDate=2026-04-19')",
+      "Bash(echo \"RAW: $\\(curl -s -X POST 'http://localhost:8082/api/deals/bod/execute?businessDate=2026-04-19'\\)\")",
+      "Bash(curl -s \"http://localhost:8082/api/deals/bod/pending-count\")"
+    ]
+  }
+}

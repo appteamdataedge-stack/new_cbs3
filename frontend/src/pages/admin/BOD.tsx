@@ -35,6 +35,12 @@ import {
   type BODResult,
   type BODStatus
 } from '../../api/adminService';
+import {
+  getPendingScheduleCount,
+  executeBOD,
+  type PendingScheduleCount,
+  type BODExecutionResult,
+} from '../../api/dealService';
 
 const BOD = () => {
   const [bodStatus, setBodStatus] = useState<BODStatus | null>(null);
@@ -42,17 +48,23 @@ const BOD = () => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [running, setRunning] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<BODResult | null>(null);
+  const [pendingSchedules, setPendingSchedules] = useState<PendingScheduleCount | null>(null);
+  const [scheduleResult, setScheduleResult] = useState<BODExecutionResult | null>(null);
 
   // Fetch BOD status when component mounts
   useEffect(() => {
-    fetchBODStatus();
+    fetchAll();
   }, []);
 
-  const fetchBODStatus = async () => {
+  const fetchAll = async () => {
     try {
       setLoading(true);
-      const status = await getBODStatus();
+      const [status, pending] = await Promise.all([
+        getBODStatus(),
+        getPendingScheduleCount(),
+      ]);
       setBodStatus(status);
+      setPendingSchedules(pending);
     } catch (error) {
       console.error('Failed to fetch BOD status:', error);
       toast.error('Failed to fetch BOD status from server');
@@ -64,8 +76,12 @@ const BOD = () => {
   const refreshStatus = async () => {
     try {
       setRefreshing(true);
-      const status = await getBODStatus();
+      const [status, pending] = await Promise.all([
+        getBODStatus(),
+        getPendingScheduleCount(),
+      ]);
       setBodStatus(status);
+      setPendingSchedules(pending);
       toast.success('BOD status refreshed');
     } catch (error) {
       console.error('Failed to refresh BOD status:', error);
@@ -75,25 +91,47 @@ const BOD = () => {
     }
   };
 
-  const executeBOD = async () => {
+  const runBODProcessing = async () => {
     try {
       setRunning(true);
+      setScheduleResult(null);
       toast.info('Starting BOD processing...', { autoClose: 2000 });
 
+      // Step 1: run existing BOD (future-dated transactions)
       const result = await runBOD();
       setLastResult(result);
 
+      // Step 2: execute deal schedules
+      let dealResult: BODExecutionResult | null = null;
+      if (pendingSchedules && pendingSchedules.totalCount > 0) {
+        try {
+          dealResult = await executeBOD();
+          setScheduleResult(dealResult);
+        } catch (schedErr) {
+          const msg = schedErr instanceof Error ? schedErr.message : 'Unknown error';
+          toast.error(`Deal schedule execution failed: ${msg}`, { autoClose: 8000 });
+        }
+      }
+
       if (result.status === 'SUCCESS') {
+        const scheduleSummary = dealResult
+          ? ` | Schedules: ${dealResult.executed}/${dealResult.totalSchedules} executed`
+          : '';
         toast.success(
-          `BOD completed successfully! Processed ${result.processedCount} transaction(s).`,
+          `BOD completed! Transactions: ${result.processedCount}${scheduleSummary}`,
           { autoClose: 5000 }
         );
       } else {
         toast.error(`BOD failed: ${result.message}`, { autoClose: 8000 });
       }
 
-      // Refresh status after BOD completes
-      await fetchBODStatus();
+      // Refresh counts after BOD
+      const [newStatus, newPending] = await Promise.all([
+        getBODStatus(),
+        getPendingScheduleCount(),
+      ]);
+      setBodStatus(newStatus);
+      setPendingSchedules(newPending);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -103,6 +141,10 @@ const BOD = () => {
       setRunning(false);
     }
   };
+
+  const hasPendingWork =
+    (bodStatus?.pendingFutureDatedCount ?? 0) > 0 ||
+    (pendingSchedules?.totalCount ?? 0) > 0;
 
   return (
     <Box>
@@ -223,8 +265,8 @@ const BOD = () => {
                       color="primary"
                       size="large"
                       startIcon={running ? <CircularProgress size={20} /> : <RunIcon />}
-                      onClick={executeBOD}
-                      disabled={running || (bodStatus ? bodStatus.pendingFutureDatedCount === 0 : false)}
+                      onClick={runBODProcessing}
+                      disabled={running || !hasPendingWork}
                       sx={{ minWidth: 200 }}
                     >
                       {running ? 'Running BOD...' : 'Run BOD Now'}
@@ -234,6 +276,89 @@ const BOD = () => {
               </Grid>
             </CardContent>
           </Card>
+
+          {/* Deal Schedules Due Today */}
+          <Card sx={{ mb: 3, border: '1px solid', borderColor: pendingSchedules && pendingSchedules.totalCount > 0 ? 'warning.main' : 'divider' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Deal Schedules Due Today
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              {pendingSchedules && pendingSchedules.totalCount > 0 ? (
+                <>
+                  <Alert severity="warning" sx={{ mb: 2 }}>
+                    <strong>{pendingSchedules.totalCount}</strong> deal schedule(s) will be executed during BOD
+                  </Alert>
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                      <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'primary.50', borderRadius: 1 }}>
+                        <Typography variant="h4" color="primary.main">
+                          {pendingSchedules.intPayCount}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Interest Payments (INT_PAY)
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'secondary.50', borderRadius: 1 }}>
+                        <Typography variant="h4" color="secondary.main">
+                          {pendingSchedules.matPayCount}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Maturity Payments (MAT_PAY)
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
+                </>
+              ) : (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CompletedIcon color="success" fontSize="small" />
+                  <Typography color="text.secondary">No deal schedules due today</Typography>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Deal Schedule Execution Result */}
+          {scheduleResult && (
+            <Card sx={{ mb: 3, bgcolor: scheduleResult.failed === 0 ? '#f8fff8' : '#fff8f8' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Deal Schedule Execution Result
+                </Typography>
+                <Divider sx={{ mb: 2 }} />
+                <Grid container spacing={2}>
+                  <Grid item xs={4}>
+                    <Typography variant="subtitle2" color="text.secondary">Total Schedules</Typography>
+                    <Typography variant="h5">{scheduleResult.totalSchedules}</Typography>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Typography variant="subtitle2" color="text.secondary">Executed</Typography>
+                    <Typography variant="h5" color="success.main">{scheduleResult.executed}</Typography>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Typography variant="subtitle2" color="text.secondary">Failed</Typography>
+                    <Typography variant="h5" color={scheduleResult.failed > 0 ? 'error.main' : 'text.secondary'}>
+                      {scheduleResult.failed}
+                    </Typography>
+                  </Grid>
+                </Grid>
+                {scheduleResult.executed > 0 && (
+                  <Alert severity="success" sx={{ mt: 2 }} variant="outlined">
+                    {scheduleResult.executed} deal schedule transaction(s) posted — go to{' '}
+                    <strong>Transactions</strong> to verify them.
+                  </Alert>
+                )}
+                {scheduleResult.failed > 0 && (
+                  <Alert severity="error" sx={{ mt: 1 }} variant="outlined">
+                    {scheduleResult.failed} schedule(s) failed. Check system logs for details.
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Last Execution Result */}
           {lastResult && (

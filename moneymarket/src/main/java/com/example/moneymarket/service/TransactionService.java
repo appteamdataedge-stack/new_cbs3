@@ -12,9 +12,11 @@ import com.example.moneymarket.entity.GLSetup;
 import com.example.moneymarket.entity.TranTable;
 import com.example.moneymarket.entity.TranTable.DrCrFlag;
 import com.example.moneymarket.entity.TranTable.TranStatus;
+import com.example.moneymarket.exception.BODNotExecutedException;
 import com.example.moneymarket.exception.BusinessException;
 import com.example.moneymarket.exception.ResourceNotFoundException;
 import com.example.moneymarket.repository.AcctBalRepository;
+import com.example.moneymarket.repository.DealScheduleRepository;
 import com.example.moneymarket.repository.AcctBalLcyRepository;
 import com.example.moneymarket.repository.CustAcctMasterRepository;
 import com.example.moneymarket.repository.GLMovementRepository;
@@ -63,6 +65,8 @@ public class TransactionService {
     private final CurrencyValidationService currencyValidationService;
     private final ExchangeRateService exchangeRateService;
     private final FxConversionService fxConversionService;
+    private final DealScheduleRepository dealScheduleRepository;
+    private final BODSchedulerService bodSchedulerService;
 
     private final Random random = new Random();
 
@@ -79,6 +83,16 @@ public class TransactionService {
      */
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public TransactionResponseDTO createTransaction(TransactionRequestDTO transactionRequestDTO) {
+        // Block if there are deal schedules for today AND BOD has not been executed yet.
+        // Use the BOD execution log (not PENDING count) so that successfully-executed BOD
+        // unblocks transactions even when some schedules failed.
+        LocalDate today = systemDateService.getSystemDate();
+        long schedulesForToday = dealScheduleRepository.countByScheduleDate(today);
+        if (schedulesForToday > 0 && !bodSchedulerService.isBodExecutedForDate(today)) {
+            long pendingCount = dealScheduleRepository.countByScheduleDateAndStatus(today, "PENDING");
+            throw new BODNotExecutedException((int) pendingCount, today);
+        }
+
         // Validate transaction balance
         validateTransactionBalance(transactionRequestDTO);
 
@@ -313,9 +327,10 @@ public class TransactionService {
      */
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public TransactionResponseDTO postTransaction(String tranId) {
-        // Find all transaction lines with Entry status
-        List<TranTable> transactions = tranTableRepository.findAll().stream()
-                .filter(t -> t.getTranId().startsWith(tranId + "-") && t.getTranStatus() == TranStatus.Entry)
+        // Find all transaction lines with Entry status using PK-index prefix scan.
+        // Supports both multi-line (-N suffix) and standalone rows (exact match).
+        List<TranTable> transactions = tranTableRepository.findByTranIdStartingWith(tranId).stream()
+                .filter(t -> matchesTranId(t.getTranId(), tranId) && t.getTranStatus() == TranStatus.Entry)
                 .collect(Collectors.toList());
 
         if (transactions.isEmpty()) {
@@ -595,18 +610,19 @@ public class TransactionService {
      */
     @Transactional
     public TransactionResponseDTO verifyTransaction(String tranId) {
-        // Find all transaction lines (any status except Verified)
-        List<TranTable> transactions = tranTableRepository.findAll().stream()
-                .filter(t -> t.getTranId().startsWith(tranId + "-") && t.getTranStatus() != TranStatus.Verified)
+        // Find all transaction lines using PK-index prefix scan (avoids full table scan).
+        // Supports both multi-line transactions (tranId + "-N" suffix) and
+        // standalone single-entry rows (exact tranId match, used by Deal Booking / BOD).
+        List<TranTable> allLines = tranTableRepository.findByTranIdStartingWith(tranId).stream()
+                .filter(t -> matchesTranId(t.getTranId(), tranId))
                 .collect(Collectors.toList());
-        
+
+        List<TranTable> transactions = allLines.stream()
+                .filter(t -> t.getTranStatus() != TranStatus.Verified)
+                .collect(Collectors.toList());
+
         if (transactions.isEmpty()) {
-            // Check if transaction exists but already verified
-            List<TranTable> existingTransactions = tranTableRepository.findAll().stream()
-                    .filter(t -> t.getTranId().startsWith(tranId + "-"))
-                    .collect(Collectors.toList());
-            
-            if (!existingTransactions.isEmpty()) {
+            if (!allLines.isEmpty()) {
                 throw new BusinessException("Transaction is already verified.");
             } else {
                 throw new ResourceNotFoundException("Transaction", "ID", tranId);
@@ -653,9 +669,10 @@ public class TransactionService {
      */
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public TransactionResponseDTO reverseTransaction(String tranId, String reason) {
-        // Find all transaction lines of the original transaction
-        List<TranTable> originalTransactions = tranTableRepository.findAll().stream()
-                .filter(t -> t.getTranId().startsWith(tranId + "-"))
+        // Find all transaction lines using PK-index prefix scan (avoids full table scan).
+        // Supports both multi-line (-N suffix) and standalone rows (exact match).
+        List<TranTable> originalTransactions = tranTableRepository.findByTranIdStartingWith(tranId).stream()
+                .filter(t -> matchesTranId(t.getTranId(), tranId))
                 .collect(Collectors.toList());
         
         if (originalTransactions.isEmpty()) {
@@ -758,33 +775,50 @@ public class TransactionService {
      * @return Page of transaction responses
      */
     public Page<TransactionResponseDTO> getAllTransactions(Pageable pageable) {
-        // Get all transaction lines
-        List<TranTable> allTransactions = tranTableRepository.findAll();
-        
-        // Group by base transaction ID (remove line number suffix)
-        Map<String, List<TranTable>> groupedTransactions = allTransactions.stream()
+        // Count distinct logical transactions for pagination metadata (one COUNT query)
+        long totalCount = tranTableRepository.countDistinctBaseTranIds();
+
+        if (totalCount == 0) {
+            return new PageImpl<>(new ArrayList<>(), pageable, 0);
+        }
+
+        // Fetch only the base IDs for this page from DB (sorted newest-first, one query)
+        List<String> baseIds = tranTableRepository.findPagedBaseTranIds(
+                pageable.getPageSize(), pageable.getOffset());
+
+        if (baseIds.isEmpty()) {
+            return new PageImpl<>(new ArrayList<>(), pageable, totalCount);
+        }
+
+        // Fetch all lines for this page's base IDs in a single query
+        List<TranTable> allLines = tranTableRepository.findAllLinesByBaseTranIds(baseIds);
+
+        // Batch fetch all account names for this page in ONE query (eliminates N+1)
+        Set<String> accountNos = allLines.stream()
+                .map(TranTable::getAccountNo)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<String, String> accountNameMap = custAcctMasterRepository.findAllById(accountNos)
+                .stream()
+                .collect(Collectors.toMap(CustAcctMaster::getAccountNo, CustAcctMaster::getAcctName));
+
+        // Group lines by base transaction ID
+        Map<String, List<TranTable>> grouped = allLines.stream()
                 .collect(Collectors.groupingBy(t -> extractBaseTranId(t.getTranId())));
-        
-        // Convert to response DTOs
-        List<TransactionResponseDTO> allResponses = groupedTransactions.entrySet().stream()
-                .map(entry -> {
-                    String baseTranId = entry.getKey();
-                    List<TranTable> lines = entry.getValue();
-                    TranTable firstLine = lines.get(0);
-                    return buildTransactionResponse(baseTranId, firstLine.getTranDate(), 
-                            firstLine.getValueDate(), firstLine.getNarration(), lines);
+
+        // Build responses in the DB sort order from baseIds
+        List<TransactionResponseDTO> responses = baseIds.stream()
+                .filter(grouped::containsKey)
+                .map(baseId -> {
+                    List<TranTable> txLines = grouped.get(baseId);
+                    TranTable first = txLines.get(0);
+                    return buildTransactionResponse(baseId, first.getTranDate(),
+                            first.getValueDate(), first.getNarration(), txLines, accountNameMap);
                 })
-                .sorted((a, b) -> b.getTranDate().compareTo(a.getTranDate())) // Sort by date descending
                 .collect(Collectors.toList());
-        
-        // Apply pagination
-        int start = (int) pageable.getOffset();
-        int end = Math.min((start + pageable.getPageSize()), allResponses.size());
-        List<TransactionResponseDTO> pageContent = start < allResponses.size() 
-                ? allResponses.subList(start, end) 
-                : new ArrayList<>();
-        
-        return new PageImpl<>(pageContent, pageable, allResponses.size());
+
+        return new PageImpl<>(responses, pageable, totalCount);
     }
 
     /**
@@ -794,9 +828,10 @@ public class TransactionService {
      * @return The transaction response
      */
     public TransactionResponseDTO getTransaction(String tranId) {
-        // Find all transaction lines with the given transaction ID prefix
-        List<TranTable> transactions = tranTableRepository.findAll().stream()
-                .filter(t -> t.getTranId().startsWith(tranId + "-"))
+        // Find all transaction lines using PK-index prefix scan (avoids full table scan).
+        // Supports both multi-line (-N suffix) and standalone rows (exact match).
+        List<TranTable> transactions = tranTableRepository.findByTranIdStartingWith(tranId).stream()
+                .filter(t -> matchesTranId(t.getTranId(), tranId))
                 .collect(Collectors.toList());
         
         if (transactions.isEmpty()) {
@@ -821,6 +856,17 @@ public class TransactionService {
     private String extractBaseTranId(String fullTranId) {
         int lastDashIndex = fullTranId.lastIndexOf('-');
         return lastDashIndex > 0 ? fullTranId.substring(0, lastDashIndex) : fullTranId;
+    }
+
+    /**
+     * Returns true if a stored tran_id belongs to the logical transaction identified by baseTranId.
+     *
+     * Two formats are supported:
+     *   1. Multi-line: baseTranId + "-" + lineNumber  (e.g. T20251009123456-1)
+     *   2. Standalone: exactly baseTranId              (e.g. D20260412000006333 from Deal Booking)
+     */
+    private boolean matchesTranId(String storedId, String baseTranId) {
+        return storedId.startsWith(baseTranId + "-") || storedId.equals(baseTranId);
     }
 
     /**
@@ -1380,26 +1426,19 @@ public class TransactionService {
     }
 
     /**
-     * Build a transaction response from the transaction lines
-     *
-     * @param tranId The transaction ID
-     * @param tranDate The transaction date
-     * @param valueDate The value date
-     * @param narration The narration
-     * @param transactions The transaction lines
-     * @return The transaction response
+     * Build a transaction response — uses pre-fetched account name map to avoid N+1 queries.
+     * Called from getAllTransactions where account names are batch-loaded for the whole page.
      */
     private TransactionResponseDTO buildTransactionResponse(String tranId, LocalDate tranDate,
-            LocalDate valueDate, String narration, List<TranTable> transactions) {
-        
+            LocalDate valueDate, String narration, List<TranTable> transactions,
+            Map<String, String> accountNameCache) {
+
         List<TransactionLineResponseDTO> lines = transactions.stream()
                 .map(tran -> {
                     String accountNo = tran.getAccountNo();
                     String accountName = (accountNo == null) ? "" :
-                            custAcctMasterRepository.findById(accountNo)
-                                    .map(CustAcctMaster::getAcctName)
-                                    .orElse("");
-                            
+                            accountNameCache.getOrDefault(accountNo, "");
+
                     return TransactionLineResponseDTO.builder()
                             .tranId(tran.getTranId())
                             .accountNo(accountNo)
@@ -1414,7 +1453,57 @@ public class TransactionService {
                             .build();
                 })
                 .collect(Collectors.toList());
-                
+
+        return TransactionResponseDTO.builder()
+                .tranId(tranId)
+                .tranDate(tranDate)
+                .valueDate(valueDate)
+                .narration(narration)
+                .lines(lines)
+                .balanced(true)
+                .status(transactions.get(0).getTranStatus().toString())
+                .build();
+    }
+
+    /**
+     * Build a transaction response from the transaction lines.
+     * Issues one DB call per line for account name — only use for single-transaction operations
+     * (post, verify, reverse, getTransaction) where the line count is small (2-4 lines).
+     * For the list page use the overload that accepts a pre-fetched accountNameCache.
+     *
+     * @param tranId The transaction ID
+     * @param tranDate The transaction date
+     * @param valueDate The value date
+     * @param narration The narration
+     * @param transactions The transaction lines
+     * @return The transaction response
+     */
+    private TransactionResponseDTO buildTransactionResponse(String tranId, LocalDate tranDate,
+            LocalDate valueDate, String narration, List<TranTable> transactions) {
+
+        List<TransactionLineResponseDTO> lines = transactions.stream()
+                .map(tran -> {
+                    String accountNo = tran.getAccountNo();
+                    String accountName = (accountNo == null) ? "" :
+                            custAcctMasterRepository.findById(accountNo)
+                                    .map(CustAcctMaster::getAcctName)
+                                    .orElse("");
+
+                    return TransactionLineResponseDTO.builder()
+                            .tranId(tran.getTranId())
+                            .accountNo(accountNo)
+                            .accountName(accountName)
+                            .drCrFlag(tran.getDrCrFlag())
+                            .tranCcy(tran.getTranCcy())
+                            .fcyAmt(tran.getFcyAmt())
+                            .exchangeRate(tran.getExchangeRate())
+                            .lcyAmt(tran.getLcyAmt())
+                            .glNum(tran.getGlNum())
+                            .udf1(tran.getNarration())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
         return TransactionResponseDTO.builder()
                 .tranId(tranId)
                 .tranDate(tranDate)

@@ -21,7 +21,7 @@ export const createTransaction = async (transaction: TransactionRequestDTO): Pro
 /**
  * Get all transactions with pagination
  */
-export const getAllTransactions = async (page = 0, size = 10, sort?: string): Promise<Page<TransactionResponseDTO>> => {
+export const getAllTransactions = async (page = 0, size = 50, sort?: string): Promise<Page<TransactionResponseDTO>> => {
   let url = `${TRANSACTIONS_ENDPOINT}?page=${page}&size=${size}`;
   if (sort) {
     url += `&sort=${sort}`;

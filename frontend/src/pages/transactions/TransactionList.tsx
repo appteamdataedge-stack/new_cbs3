@@ -12,6 +12,7 @@ import {
   Grid,
   IconButton,
   Paper,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -24,7 +25,7 @@ import {
   InputAdornment
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { getAllTransactions, getTransactionById, verifyTransaction } from '../../api/transactionService';
@@ -37,8 +38,10 @@ const TransactionList = () => {
   const { tranId } = useParams<{ tranId: string }>();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionResponseDTO | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [verificationModal, setVerificationModal] = useState<{
@@ -232,25 +235,24 @@ const TransactionList = () => {
   // Use real data from API, fallback to mock data if API returns empty
   const dataToUse = transactions.length > 0 ? transactions : mockedTransactions;
 
-  // Filter transactions based on search term
+  // Filter transactions based on debounced search term (avoids per-keystroke refilter)
   const filteredTransactions = useMemo(() => {
-    if (!dataToUse || searchTerm.trim() === '') {
+    if (!dataToUse || debouncedSearch.trim() === '') {
       return dataToUse || [];
     }
-    
-    const lowerCaseSearch = searchTerm.toLowerCase();
-    
+
+    const lowerCaseSearch = debouncedSearch.toLowerCase();
+
     return dataToUse.filter((transaction) => {
-      // Search in various fields
       return (
-        transaction.tranId.toLowerCase().includes(lowerCaseSearch) || 
+        transaction.tranId.toLowerCase().includes(lowerCaseSearch) ||
         (transaction.narration && transaction.narration.toLowerCase().includes(lowerCaseSearch)) ||
         transaction.status.toLowerCase().includes(lowerCaseSearch) ||
         transaction.valueDate.includes(lowerCaseSearch) ||
         transaction.tranDate.includes(lowerCaseSearch)
       );
     });
-  }, [searchTerm, dataToUse]);
+  }, [debouncedSearch, dataToUse]);
   
   // Use filtered transactions directly (backend handles pagination)
   const paginatedData = filteredTransactions;
@@ -275,10 +277,13 @@ const TransactionList = () => {
     setDialogOpen(false);
   };
 
-  // Handle search input change - dynamic search as user types
-  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-  };
+  // Handle search input change — debounced so rapid keystrokes don't re-filter on every character
+  const handleSearchInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setDebouncedSearch(value), 300);
+  }, []);
 
   // Handle opening verification modal
   const handleOpenVerifyModal = (tranId: string) => {
@@ -418,7 +423,7 @@ const TransactionList = () => {
               <InputAdornment position="end">
                 <IconButton 
                   aria-label="clear search"
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => { setSearchTerm(''); setDebouncedSearch(''); }}
                   edge="end"
                   size="small"
                 >
@@ -435,22 +440,31 @@ const TransactionList = () => {
       {/* Transaction History */}
       <Card sx={{ mb: 4 }}>
         <CardContent>
-          <DataTable
-            columns={columns}
-            rows={paginatedData}
-            totalItems={totalItems}
-            page={page}
-            rowsPerPage={rowsPerPage}
-            onPageChange={setPage}
-            onRowsPerPageChange={setRowsPerPage}
-            loading={isLoading}
-            idField="tranId"
-            emptyContent={
-              <TableCell colSpan={6} align="center">
-                {isLoading ? 'Loading transactions...' : 'No transactions found. Create your first transaction.'}
-              </TableCell>
-            }
-          />
+          {isLoading ? (
+            /* Loading skeleton — shows structure immediately instead of blank screen */
+            <Box>
+              {[...Array(8)].map((_, i) => (
+                <Skeleton key={i} variant="rectangular" height={48} sx={{ mb: 1, borderRadius: 1 }} />
+              ))}
+            </Box>
+          ) : (
+            <DataTable
+              columns={columns}
+              rows={paginatedData}
+              totalItems={totalItems}
+              page={page}
+              rowsPerPage={rowsPerPage}
+              onPageChange={setPage}
+              onRowsPerPageChange={setRowsPerPage}
+              loading={false}
+              idField="tranId"
+              emptyContent={
+                <TableCell colSpan={6} align="center">
+                  No transactions found. Create your first transaction.
+                </TableCell>
+              }
+            />
+          )}
         </CardContent>
       </Card>
 

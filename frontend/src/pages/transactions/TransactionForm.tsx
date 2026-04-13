@@ -5,6 +5,10 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   FormHelperText,
   Grid,
@@ -14,9 +18,15 @@ import {
   MenuItem,
   Paper,
   Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableRow,
   TextField,
   Typography,
 } from '@mui/material';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, useMemo } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
@@ -43,6 +53,7 @@ const TransactionForm = () => {
   const [loadingBalances, setLoadingBalances] = useState<Set<number>>(new Set());
   const [rateTypes, setRateTypes] = useState<Map<number, string>>(new Map()); // Store rate type per line (Mid/Buying/Selling)
   const [exchangeRates, setExchangeRates] = useState<Map<number, { midRate: number; buyingRate: number; sellingRate: number }>>(new Map()); // Store all rates per line
+  const [bodBlockError, setBodBlockError] = useState<{ pendingScheduleCount: number; scheduleDate: string; message: string } | null>(null);
 
   // Timeout so a hanging API never blocks the page forever
   const QUERY_TIMEOUT_MS = 15_000;
@@ -335,7 +346,13 @@ const TransactionForm = () => {
       navigate('/transactions');
     },
     onError: (error: Error) => {
-      toast.error(`Failed to create transaction: ${error.message}`);
+      const errData = (error as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      if (errData?.error === 'BOD_NOT_EXECUTED') {
+        setBodBlockError(errData as unknown as { pendingScheduleCount: number; scheduleDate: string; message: string });
+      } else {
+        const msg = (errData?.message as string) ?? error.message ?? 'Failed to create transaction';
+        toast.error(`Failed to create transaction: ${msg}`);
+      }
     }
   });
 
@@ -1407,6 +1424,59 @@ const TransactionForm = () => {
           </Button>
         </Box>
       </form>
+
+      {/* ── BOD Not Executed Dialog ── */}
+      <Dialog
+        open={bodBlockError !== null}
+        onClose={() => setBodBlockError(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}>
+          <ErrorOutlineIcon color="warning" />
+          BOD Not Executed
+        </DialogTitle>
+        <DialogContent>
+          {bodBlockError && (
+            <>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                {bodBlockError.message}
+              </Alert>
+              <TableContainer>
+                <Table size="small">
+                  <TableBody>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, width: '55%' }}>Schedule Date</TableCell>
+                      <TableCell>{bodBlockError.scheduleDate}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Pending Schedules</TableCell>
+                      <TableCell>
+                        <Typography color="warning.main" fontWeight="bold">
+                          {bodBlockError.pendingScheduleCount}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+                Please run BOD for {bodBlockError.scheduleDate} to process pending deal schedules before posting transactions.
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button variant="outlined" onClick={() => setBodBlockError(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => { setBodBlockError(null); navigate('/admin/bod'); }}
+          >
+            Go to BOD Page
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -16,7 +16,9 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @ControllerAdvice
@@ -67,6 +69,31 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
     }
     
+    @ExceptionHandler(InsufficientBalanceException.class)
+    public ResponseEntity<Map<String, Object>> handleInsufficientBalance(
+            InsufficientBalanceException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error",           "INSUFFICIENT_BALANCE");
+        body.put("message",         ex.getMessage());
+        body.put("accountNumber",   ex.getAccountNumber());
+        body.put("accountName",     ex.getAccountName());
+        body.put("currentBalance",  ex.getCurrentBalance());
+        body.put("requiredAmount",  ex.getRequiredAmount());
+        body.put("shortfall",       ex.getShortfall());
+        body.put("currency",        ex.getCurrency());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(BODNotExecutedException.class)
+    public ResponseEntity<Map<String, Object>> handleBODNotExecuted(BODNotExecutedException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error",                "BOD_NOT_EXECUTED");
+        body.put("message",              ex.getMessage());
+        body.put("pendingScheduleCount", ex.getPendingScheduleCount());
+        body.put("scheduleDate",         ex.getScheduleDate().toString());
+        return ResponseEntity.status(428).body(body);
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponseDTO> handleBusinessException(
             BusinessException ex, WebRequest request) {

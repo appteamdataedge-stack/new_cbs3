@@ -269,4 +269,44 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
      * @return Count of transactions matching the criteria
      */
     long countByTranDateAndTranIdStartingWith(LocalDate tranDate, String tranIdPrefix);
+
+    // -------------------------------------------------------------------------
+    // Pagination-aware queries for the Transaction List page
+    // -------------------------------------------------------------------------
+
+    /**
+     * Count distinct logical (base) transaction IDs.
+     * Base ID = Tran_Id with the trailing '-N' line-number suffix removed.
+     * Works for both multi-line rows (T20251009123456-1) and standalone rows (D20260412000001).
+     */
+    @Query(value =
+        "SELECT COUNT(*) FROM (" +
+        "  SELECT SUBSTRING(Tran_Id, 1, LENGTH(Tran_Id) - LOCATE('-', REVERSE(Tran_Id))) AS base_id" +
+        "  FROM Tran_Table GROUP BY base_id" +
+        ") subq",
+        nativeQuery = true)
+    long countDistinctBaseTranIds();
+
+    /**
+     * Return one page of distinct base transaction IDs, sorted newest-first by MAX(Tran_Date).
+     * Uses manual LIMIT/OFFSET because Spring's Pageable + GROUP BY in native queries is unreliable.
+     */
+    @Query(value =
+        "SELECT SUBSTRING(Tran_Id, 1, LENGTH(Tran_Id) - LOCATE('-', REVERSE(Tran_Id))) AS base_id " +
+        "FROM Tran_Table " +
+        "GROUP BY base_id " +
+        "ORDER BY MAX(Tran_Date) DESC, base_id DESC " +
+        "LIMIT :size OFFSET :offset",
+        nativeQuery = true)
+    List<String> findPagedBaseTranIds(@Param("size") int size, @Param("offset") long offset);
+
+    /**
+     * Fetch all TranTable rows whose logical base ID is in the provided list.
+     * Used together with findPagedBaseTranIds to load exactly the lines needed for one page.
+     */
+    @Query(value =
+        "SELECT * FROM Tran_Table " +
+        "WHERE SUBSTRING(Tran_Id, 1, LENGTH(Tran_Id) - LOCATE('-', REVERSE(Tran_Id))) IN :baseIds",
+        nativeQuery = true)
+    List<TranTable> findAllLinesByBaseTranIds(@Param("baseIds") List<String> baseIds);
 }

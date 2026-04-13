@@ -35,6 +35,7 @@ import AccountCircle from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import BookOnlineIcon from '@mui/icons-material/BookOnline';
 import { useAuth } from '../../context/AuthContext';
 
 const drawerWidth = 280;
@@ -59,6 +60,7 @@ const Sidebar = ({ open, onToggle }: SidebarProps) => {
     { name: 'SubProducts', path: '/subproducts', icon: <ViewListIcon /> },
     { name: 'Accounts', path: '/accounts', icon: <AccountBalanceIcon /> },
     { name: 'Office Accounts', path: '/office-accounts', icon: <BusinessIcon /> },
+    { name: 'Deal Booking', path: '/deal-booking', icon: <BookOnlineIcon /> },
     { name: 'Transactions', path: '/transactions', icon: <PaymentIcon /> },
     { name: 'Interest Capitalization', path: '/interest-capitalization', icon: <AccountBalanceWalletIcon /> },
     { name: 'FX Conversion', path: '/fx-conversion', icon: <CurrencyExchangeIcon /> },

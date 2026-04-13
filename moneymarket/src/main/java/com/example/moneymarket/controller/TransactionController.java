@@ -55,7 +55,7 @@ public class TransactionController {
     @GetMapping
     public ResponseEntity<Page<TransactionResponseDTO>> getAllTransactions(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String sort) {
         
         Pageable pageable;
@@ -113,7 +113,7 @@ public class TransactionController {
      * @param tranId The transaction ID
      * @return The transaction
      */
-    @GetMapping("/{tranId:[TF][0-9\\-]+}")
+    @GetMapping("/{tranId:[A-Z][0-9A-Z\\-]+}")
     public ResponseEntity<TransactionResponseDTO> getTransaction(@PathVariable String tranId) {
         TransactionResponseDTO transaction = transactionService.getTransaction(tranId);
         return ResponseEntity.ok(transaction);
@@ -127,7 +127,7 @@ public class TransactionController {
      * @param tranId The transaction ID
      * @return The posted transaction
      */
-    @PostMapping("/{tranId:[TF][0-9\\-]+}/post")
+    @PostMapping("/{tranId:[A-Z][0-9A-Z\\-]+}/post")
     public ResponseEntity<TransactionResponseDTO> postTransaction(@PathVariable String tranId) {
         TransactionResponseDTO postedTransaction = transactionService.postTransaction(tranId);
         return ResponseEntity.ok(postedTransaction);
@@ -141,7 +141,7 @@ public class TransactionController {
      * @param tranId The transaction ID
      * @return The verified transaction
      */
-    @PostMapping("/{tranId:[TF][0-9\\-]+}/verify")
+    @PostMapping("/{tranId:[A-Z][0-9A-Z\\-]+}/verify")
     public ResponseEntity<TransactionResponseDTO> verifyTransaction(@PathVariable String tranId) {
         TransactionResponseDTO verifiedTransaction = transactionService.verifyTransaction(tranId);
         return ResponseEntity.ok(verifiedTransaction);
@@ -182,7 +182,7 @@ public class TransactionController {
      * @param reason The reason for reversal
      * @return The reversal transaction
      */
-    @PostMapping("/{tranId:[TF][0-9\\-]+}/reverse")
+    @PostMapping("/{tranId:[A-Z][0-9A-Z\\-]+}/reverse")
     public ResponseEntity<TransactionResponseDTO> reverseTransaction(
             @PathVariable String tranId,
             @RequestParam(required = false, defaultValue = "Manual reversal") String reason) {

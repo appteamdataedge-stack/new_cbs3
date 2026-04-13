@@ -103,11 +103,22 @@ apiClient.interceptors.response.use(
         return Promise.reject(new Error('You do not have permission to perform this action.'));
       }
       
-      // Business errors are returned with HTTP 400 status
+      // Business errors are returned with HTTP 400 status — preserve response.data for structured errors
       if (status === 400 && data) {
-        return Promise.reject(new Error(data.message || 'Business validation error'));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const appError: any = new Error((data as any).message || 'Business validation error');
+        appError.response = error.response;
+        return Promise.reject(appError);
       }
-      
+
+      // Precondition required (e.g. BOD not executed) — preserve response.data
+      if (status === 428 && data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const appError: any = new Error((data as any).message || 'Precondition required');
+        appError.response = error.response;
+        return Promise.reject(appError);
+      }
+
       // Not found errors
       if (status === 404) {
         return Promise.reject(new Error('Resource not found'));
