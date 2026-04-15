@@ -36,8 +36,9 @@ This project is a production-ready, scalable Spring Boot application implementin
    ```
 4. Run the application:
    ```bash
-   mvn spring-boot:run
+   restart-backend.bat
    ```
+   To restart backend, run restart-backend.bat instead of mvn spring-boot:run.
 
 ### Using Docker Compose
 

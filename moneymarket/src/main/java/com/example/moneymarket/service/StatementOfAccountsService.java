@@ -36,6 +36,7 @@ public class StatementOfAccountsService {
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final OFAcctMasterRepository ofAcctMasterRepository;
     private final AcctBalRepository acctBalRepository;
+    private final SystemDateService systemDateService;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
 
@@ -101,12 +102,15 @@ public class StatementOfAccountsService {
             throw new IllegalArgumentException("From date must be before or equal to To date");
         }
 
-        if (fromDate.isAfter(LocalDate.now())) {
-            throw new IllegalArgumentException("From date cannot be in the future");
+        LocalDate applicationDate = systemDateService.getSystemDate();
+        if (fromDate.isAfter(applicationDate)) {
+            throw new IllegalArgumentException(
+                    "From date cannot be after the application date (" + applicationDate + ")");
         }
 
-        if (toDate.isAfter(LocalDate.now())) {
-            throw new IllegalArgumentException("To date cannot be in the future");
+        if (toDate.isAfter(applicationDate)) {
+            throw new IllegalArgumentException(
+                    "To date cannot be after the application date (" + applicationDate + ")");
         }
 
         // Check 6-month maximum range

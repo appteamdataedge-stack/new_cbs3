@@ -55,6 +55,7 @@ public class DealBookingService {
     private final AcctBalRepository acctBalRepository;
     private final TranTableRepository tranTableRepository;
     private final DealScheduleRepository dealScheduleRepository;
+    private final InterestRateMasterRepository interestRateMasterRepository;
     private final AccountNumberService accountNumberService;
     private final BalanceService balanceService;
     private final SystemDateService systemDateService;
@@ -136,7 +137,7 @@ public class DealBookingService {
         BigDecimal rate = subProduct.getEffectiveInterestRate() != null
                 ? subProduct.getEffectiveInterestRate()
                 : BigDecimal.ZERO;
-        List<DealSchedule> schedules = generateSchedules(request, dealAccountNo, maturityDate, rate);
+        List<DealSchedule> schedules = generateSchedules(request, dealAccountNo, maturityDate, subProduct);
         dealScheduleRepository.saveAll(schedules);
         log.info("Generated {} schedules for deal account {}", schedules.size(), dealAccountNo);
 
@@ -351,17 +352,17 @@ public class DealBookingService {
     private List<DealSchedule> generateSchedules(DealBookingRequestDTO request,
                                                    String dealAccountNo,
                                                    LocalDate maturityDate,
-                                                   BigDecimal annualRate) {
+                                                   SubProdMaster subProduct) {
         List<DealSchedule> schedules = new ArrayList<>();
         boolean isCompounding = "C".equals(request.getInterestType());
         String customerId = String.valueOf(request.getCustId());
 
         if (isCompounding) {
             schedules.addAll(buildCompoundingSchedules(request, dealAccountNo, maturityDate,
-                    annualRate, customerId));
+                    subProduct, customerId));
         } else {
             schedules.addAll(buildNonCompoundingSchedules(request, dealAccountNo, maturityDate,
-                    annualRate, customerId));
+                    subProduct, customerId));
         }
 
         return schedules;
@@ -370,9 +371,10 @@ public class DealBookingService {
     private List<DealSchedule> buildNonCompoundingSchedules(DealBookingRequestDTO request,
                                                               String dealAccountNo,
                                                               LocalDate maturityDate,
-                                                              BigDecimal annualRate,
+                                                              SubProdMaster subProduct,
                                                               String customerId) {
         List<DealSchedule> schedules = new ArrayList<>();
+        BigDecimal annualRate = getApplicableInterestRate(subProduct, maturityDate);
         BigDecimal interest = calculateSimpleInterest(request.getDealAmount(), annualRate, request.getTenor());
 
         // INT_PAY on maturity date
@@ -411,7 +413,7 @@ public class DealBookingService {
     private List<DealSchedule> buildCompoundingSchedules(DealBookingRequestDTO request,
                                                           String dealAccountNo,
                                                           LocalDate maturityDate,
-                                                          BigDecimal annualRate,
+                                                          SubProdMaster subProduct,
                                                           String customerId) {
         List<DealSchedule> schedules = new ArrayList<>();
         int frequency = request.getCompoundingFrequency();
@@ -422,6 +424,7 @@ public class DealBookingService {
         // Build INT_PAY records for each compounding period
         while (!periodEnd.isAfter(maturityDate)) {
             long periodDays = java.time.temporal.ChronoUnit.DAYS.between(periodStart, periodEnd);
+            BigDecimal annualRate = getApplicableInterestRate(subProduct, periodEnd);
             BigDecimal periodInterest = calculateSimpleInterest(runningPrincipal, annualRate, (int) periodDays);
 
             schedules.add(DealSchedule.builder()
@@ -446,6 +449,7 @@ public class DealBookingService {
         // Handle stub period (if maturity not on a compounding date)
         if (periodStart.isBefore(maturityDate)) {
             long stubDays = java.time.temporal.ChronoUnit.DAYS.between(periodStart, maturityDate);
+            BigDecimal annualRate = getApplicableInterestRate(subProduct, maturityDate);
             BigDecimal stubInterest = calculateSimpleInterest(runningPrincipal, annualRate, (int) stubDays);
             runningPrincipal = runningPrincipal.add(stubInterest);
 
@@ -507,6 +511,28 @@ public class DealBookingService {
                 .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(days))
                 .divide(BigDecimal.valueOf(365), 2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Use the same rate source as BOD posting (InterestRateMaster by inttCode + effective date),
+     * and only fall back to sub-product static rate if no master rate exists.
+     */
+    private BigDecimal getApplicableInterestRate(SubProdMaster subProduct, LocalDate asOfDate) {
+        if (subProduct == null) {
+            return BigDecimal.ZERO;
+        }
+        if (subProduct.getInttCode() != null && !subProduct.getInttCode().isBlank()) {
+            return interestRateMasterRepository
+                    .findTopByInttCodeAndInttEffctvDateLessThanEqualOrderByInttEffctvDateDesc(
+                            subProduct.getInttCode(), asOfDate)
+                    .map(InterestRateMaster::getInttRate)
+                    .orElseGet(() -> subProduct.getEffectiveInterestRate() != null
+                            ? subProduct.getEffectiveInterestRate()
+                            : BigDecimal.ZERO);
+        }
+        return subProduct.getEffectiveInterestRate() != null
+                ? subProduct.getEffectiveInterestRate()
+                : BigDecimal.ZERO;
     }
 
     /** Generates a deal transaction ID: D + yyyyMMdd + 6-digit-seq + 3-digit-random (18 chars). */

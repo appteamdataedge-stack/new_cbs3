@@ -22,11 +22,22 @@ import {
 import { Description as DescriptionIcon } from '@mui/icons-material';
 import type { AccountOption } from '../types/soa.types';
 import { getAccountList, generateSOA } from '../services/soaService';
+import { getTransactionSystemDate } from '../api/transactionService';
 import { toast } from 'react-toastify';
 import { PageHeader, FormSection } from '../components/common';
 import Select from 'react-select';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+
+/** Parse YYYY-MM-DD as a local calendar date (avoids UTC midnight shifting the day). */
+function parseIsoDateToLocal(iso: string): Date {
+  const parts = iso.trim().split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+    throw new Error('Invalid date');
+  }
+  const [y, m, d] = parts;
+  return new Date(y, m - 1, d);
+}
 
 const StatementOfAccounts: React.FC = () => {
   // State variables
@@ -35,6 +46,8 @@ const StatementOfAccounts: React.FC = () => {
   const [toDate, setToDate] = useState<Date | null>(null);
   const [format, setFormat] = useState<string>('excel');
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [maxDate, setMaxDate] = useState<Date | null>(null);
+  const [applicationDateError, setApplicationDateError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +71,33 @@ const StatementOfAccounts: React.FC = () => {
 
     fetchAccounts();
   }, []);
+
+  // Application date from Parameter_Table (same source as transactions / EOD), not the PC clock.
+  useEffect(() => {
+    const fetchApplicationDate = async () => {
+      try {
+        const { systemDate } = await getTransactionSystemDate();
+        if (systemDate) {
+          setMaxDate(parseIsoDateToLocal(systemDate));
+          setApplicationDateError(null);
+        } else {
+          setApplicationDateError('Application date is not configured.');
+        }
+      } catch (err) {
+        console.error('Failed to fetch application date for SOA:', err);
+        setApplicationDateError('Could not load application date. Please refresh or contact support.');
+      }
+    };
+
+    fetchApplicationDate();
+  }, []);
+
+  // Re-validate when application date arrives (e.g. user had already chosen dates)
+  useEffect(() => {
+    if (fromDate && toDate && maxDate) {
+      validateDateRange(fromDate, toDate);
+    }
+  }, [maxDate]);
 
   // Handler: Account selection change
   const handleAccountChange = (selectedOption: any) => {
@@ -85,17 +125,25 @@ const StatementOfAccounts: React.FC = () => {
     }
   };
 
-  // Validate date range (6-month maximum)
+  // Validate date range (6-month maximum, not beyond application date)
   const validateDateRange = (from: Date, to: Date) => {
-    // Check if from date is after to date
     if (from > to) {
       setDateRangeError('From date must be before or equal to To date');
       return false;
     }
 
-    // Calculate months between dates
-    const monthsDiff = (to.getFullYear() - from.getFullYear()) * 12 + 
-                       (to.getMonth() - from.getMonth());
+    if (maxDate) {
+      const endOfAppDay = new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate());
+      const fromDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+      const toDay = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+      if (fromDay > endOfAppDay || toDay > endOfAppDay) {
+        setDateRangeError('Dates cannot be after the current application date');
+        return false;
+      }
+    }
+
+    const monthsDiff =
+      (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
 
     if (monthsDiff > 6) {
       setDateRangeError('Maximum 6 months date range allowed');
@@ -160,7 +208,8 @@ const StatementOfAccounts: React.FC = () => {
   }));
 
   // Check if form is valid
-  const isFormValid = selectedAccount && fromDate && toDate && !dateRangeError && !isGenerating;
+  const isFormValid =
+    Boolean(selectedAccount && fromDate && toDate && maxDate && !dateRangeError && !isGenerating);
 
   return (
     <Box>
@@ -175,6 +224,11 @@ const StatementOfAccounts: React.FC = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
           {error}
+        </Alert>
+      )}
+      {applicationDateError && (
+        <Alert severity="warning" sx={{ mb: 1.5 }}>
+          {applicationDateError}
         </Alert>
       )}
 
@@ -231,7 +285,8 @@ const StatementOfAccounts: React.FC = () => {
               <DatePicker
                 selected={fromDate}
                 onChange={handleFromDateChange}
-                maxDate={new Date()}
+                maxDate={maxDate ?? undefined}
+                disabled={!maxDate}
                 dateFormat="dd-MMM-yyyy"
                 placeholderText="Select from date"
                 customInput={
@@ -255,7 +310,8 @@ const StatementOfAccounts: React.FC = () => {
                 selected={toDate}
                 onChange={handleToDateChange}
                 minDate={fromDate || undefined}
-                maxDate={new Date()}
+                maxDate={maxDate ?? undefined}
+                disabled={!maxDate}
                 dateFormat="dd-MMM-yyyy"
                 placeholderText="Select to date"
                 customInput={

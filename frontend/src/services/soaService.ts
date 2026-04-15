@@ -5,6 +5,14 @@
 import apiClient from '../api/apiClient';
 import type { AccountOption, DateRangeValidationResponse } from '../types/soa.types';
 
+/** Format a JS Date as YYYY-MM-DD in local calendar (avoids UTC shift from toISOString()). */
+function formatLocalDateYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * Get list of all accounts for dropdown
  */
@@ -28,9 +36,8 @@ export const generateSOA = async (
   format: string = 'excel'
 ): Promise<void> => {
   try {
-    // Format dates as YYYY-MM-DD
-    const fromDateStr = fromDate.toISOString().split('T')[0];
-    const toDateStr = toDate.toISOString().split('T')[0];
+    const fromDateStr = formatLocalDateYmd(fromDate);
+    const toDateStr = formatLocalDateYmd(toDate);
 
     // Make request with responseType: 'blob' to handle binary data
     const response = await apiClient.post('/soa/generate', null, {
@@ -103,9 +110,8 @@ export const validateDateRange = async (
   toDate: Date
 ): Promise<DateRangeValidationResponse> => {
   try {
-    // Format dates as YYYY-MM-DD
-    const fromDateStr = fromDate.toISOString().split('T')[0];
-    const toDateStr = toDate.toISOString().split('T')[0];
+    const fromDateStr = formatLocalDateYmd(fromDate);
+    const toDateStr = formatLocalDateYmd(toDate);
 
     const response = await apiClient.post<DateRangeValidationResponse>(
       '/soa/validate-date-range',

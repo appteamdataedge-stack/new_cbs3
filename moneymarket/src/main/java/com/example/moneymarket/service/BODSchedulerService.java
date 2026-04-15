@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -51,6 +52,7 @@ public class BODSchedulerService {
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final AcctBalRepository        acctBalRepository;
     private final TranTableRepository      tranTableRepository;
+    private final InterestRateMasterRepository interestRateMasterRepository;
     private final BodExecutionLogRepository bodExecutionLogRepository;
     private final BalanceService           balanceService;
     private final SystemDateService        systemDateService;
@@ -165,7 +167,9 @@ public class BODSchedulerService {
      */
     private void processIntPay(DealSchedule schedule, CustAcctMaster dealAccount,
                                 SubProdMaster subProduct, String ccy, LocalDate businessDate) {
-        BigDecimal amount = schedule.getScheduleAmount();
+        BigDecimal amount = calculateInterestForPeriod(schedule, dealAccount);
+        // Keep schedule amount aligned with actual posted interest for audit/reporting.
+        schedule.setScheduleAmount(amount);
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             log.warn("INT_PAY schedule {} has zero/null amount, skipping accounting entries",
                     schedule.getScheduleId());
@@ -179,14 +183,14 @@ public class BODSchedulerService {
         String baseTranId = generateBodTranId(businessDate);
 
         if (isLiability) {
-            // DR Interest Expenditure GL, CR Term Deposit Account
-            String interestExpGL = subProduct.getInterestReceivableExpenditureGLNum();
-            if (interestExpGL == null) {
-                throw new IllegalStateException("Interest Expenditure GL not configured for sub-product "
+            // DR Interest Payable GL, CR Term Deposit Account
+            String interestPayableGL = subProduct.getInterestIncomePayableGLNum();
+            if (interestPayableGL == null) {
+                throw new IllegalStateException("Interest Payable GL not configured for sub-product "
                         + subProduct.getSubProductCode());
             }
             saveTranEntry(buildTranEntry(baseTranId + "-1", businessDate, businessDate,
-                    DrCrFlag.D, null, interestExpGL, ccy, amount, narration, "BOD", EVENT_INT_PAY));
+                    DrCrFlag.D, null, interestPayableGL, ccy, amount, narration, "BOD", EVENT_INT_PAY));
             saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
                     DrCrFlag.C, schedule.getAccountNumber(), null, ccy, amount, narration, "BOD", EVENT_INT_PAY));
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.C, amount);
@@ -225,12 +229,9 @@ public class BODSchedulerService {
             throw new IllegalStateException("Operative account not set on schedule id=" + schedule.getScheduleId());
         }
 
-        AcctBal dealBal = acctBalRepository.findLatestByAccountNo(schedule.getAccountNumber())
-                .orElseThrow(() -> new ResourceNotFoundException("Deal Account Balance",
-                        "Account Number", schedule.getAccountNumber()));
-
-        // Liability balance is negative; Asset balance is positive
-        BigDecimal transferAmount = dealBal.getCurrentBalance().abs();
+        BigDecimal transferAmount = calculateMaturityAmount(schedule, businessDate);
+        // Keep schedule amount aligned with actual maturity posting (principal + accrued interest).
+        schedule.setScheduleAmount(transferAmount);
         if (transferAmount.compareTo(BigDecimal.ZERO) == 0) {
             log.warn("MAT_PAY schedule {} has zero balance on deal account, skipping", schedule.getScheduleId());
             return;
@@ -267,6 +268,114 @@ public class BODSchedulerService {
         custAcctMasterRepository.save(dealAccount);
 
         log.info("MAT_PAY processed for account={} amount={}", schedule.getAccountNumber(), transferAmount);
+    }
+
+    /**
+     * MAT_PAY amount must be Principal + Total Interest capitalized into the deal account.
+     * Principal is stored on the MAT_PAY schedule at booking time (scheduleAmount).
+     * Interest is identified as credit entries posted by the deal scheduler with tranSubType=INT_PAY.
+     */
+    private BigDecimal calculateMaturityAmount(DealSchedule schedule, LocalDate businessDate) {
+        BigDecimal principal = getBookedPrincipalAmount(schedule);
+        BigDecimal totalInterest = tranTableRepository.findByAccountNo(schedule.getAccountNumber()).stream()
+                .filter(t -> EVENT_INT_PAY.equals(t.getTranSubType()))
+                .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                .filter(t -> t.getTranDate() != null && !t.getTranDate().isAfter(businessDate))
+                .map(t -> t.getFcyAmt() != null ? t.getFcyAmt() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal maturityAmount = principal.add(totalInterest);
+        log.info("MAT_PAY maturity amount for account={}: principal={} interest={} total={}",
+                schedule.getAccountNumber(), principal, totalInterest, maturityAmount);
+        return maturityAmount;
+    }
+
+    /**
+     * Derive booked principal from the original DEAL/BOOKING transaction line for this deal account.
+     * This avoids double-counting interest for compounding deals where MAT_PAY scheduleAmount can
+     * already include projected interest.
+     */
+    private BigDecimal getBookedPrincipalAmount(DealSchedule schedule) {
+        boolean isLiability = "L".equals(schedule.getDealType());
+        return tranTableRepository.findByAccountNo(schedule.getAccountNumber()).stream()
+                .filter(t -> "BOOKING".equals(t.getTranSubType()))
+                .filter(t -> t.getTranStatus() == TranStatus.Posted || t.getTranStatus() == TranStatus.Verified)
+                .filter(t -> isLiability ? t.getDrCrFlag() == DrCrFlag.C : t.getDrCrFlag() == DrCrFlag.D)
+                .map(t -> t.getFcyAmt() != null ? t.getFcyAmt() : BigDecimal.ZERO)
+                .findFirst()
+                .orElseGet(() -> {
+                    log.warn("Could not derive original principal from booking transaction for account={}, falling back to MAT_PAY schedule amount",
+                            schedule.getAccountNumber());
+                    return schedule.getScheduleAmount() != null ? schedule.getScheduleAmount() : BigDecimal.ZERO;
+                });
+    }
+
+    /**
+     * Calculates INT_PAY amount for one period.
+     * - Compounding (e.g. TDCUM/STLTR): calculate on current TD balance.
+     * - Non-compounding: keep booked schedule amount (existing behavior).
+     */
+    private BigDecimal calculateInterestForPeriod(DealSchedule schedule, CustAcctMaster dealAccount) {
+        BigDecimal bookedAmount = schedule.getScheduleAmount() != null ? schedule.getScheduleAmount() : BigDecimal.ZERO;
+
+        if (!isCompoundingDeal(dealAccount)) {
+            return bookedAmount;
+        }
+
+        SubProdMaster subProduct = dealAccount.getSubProduct();
+        if (subProduct == null || subProduct.getInttCode() == null || subProduct.getInttCode().isBlank()) {
+            log.warn("Compounding account {} missing inttCode; falling back to booked schedule amount",
+                    schedule.getAccountNumber());
+            return bookedAmount;
+        }
+
+        LocalDate asOfDate = schedule.getScheduleDate() != null ? schedule.getScheduleDate() : systemDateService.getSystemDate();
+        Optional<InterestRateMaster> rateOpt = interestRateMasterRepository
+                .findTopByInttCodeAndInttEffctvDateLessThanEqualOrderByInttEffctvDateDesc(subProduct.getInttCode(), asOfDate);
+        if (rateOpt.isEmpty() || rateOpt.get().getInttRate() == null) {
+            log.warn("No interest rate found for account {} inttCode={} asOfDate={}; falling back to booked schedule amount",
+                    schedule.getAccountNumber(), subProduct.getInttCode(), asOfDate);
+            return bookedAmount;
+        }
+
+        BigDecimal principal = getCurrentTDBalance(schedule.getAccountNumber());
+        if (principal.compareTo(BigDecimal.ZERO) <= 0) {
+            principal = getOriginalDealAmount(schedule.getAccountNumber());
+        }
+
+        BigDecimal interestRate = rateOpt.get().getInttRate();
+        return principal
+                .multiply(interestRate)
+                .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
+    }
+
+    private boolean isCompoundingDeal(CustAcctMaster dealAccount) {
+        if (dealAccount == null || dealAccount.getSubProduct() == null) {
+            return false;
+        }
+        String subProductCode = dealAccount.getSubProduct().getSubProductCode();
+        return "TDCUM".equals(subProductCode) || "STLTR".equals(subProductCode);
+    }
+
+    private BigDecimal getCurrentTDBalance(String accountNumber) {
+        Optional<AcctBal> latestBal = acctBalRepository.findLatestByAccountNo(accountNumber);
+        if (latestBal.isPresent() && latestBal.get().getCurrentBalance() != null) {
+            return latestBal.get().getCurrentBalance();
+        }
+
+        // Fallback: derive from posted credits if no balance row is available.
+        return tranTableRepository.findByAccountNo(accountNumber).stream()
+                .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                .map(t -> t.getFcyAmt() != null ? t.getFcyAmt() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal getOriginalDealAmount(String accountNumber) {
+        return dealScheduleRepository.findByAccountNumber(accountNumber).stream()
+                .filter(s -> EVENT_MAT_PAY.equals(s.getEventCode()))
+                .map(s -> s.getScheduleAmount() != null ? s.getScheduleAmount() : BigDecimal.ZERO)
+                .findFirst()
+                .orElse(BigDecimal.ZERO);
     }
 
     // -------------------------------------------------------------------------
@@ -336,6 +445,8 @@ public class BODSchedulerService {
                                       String narration, String tranType, String tranSubType) {
         BigDecimal debitAmt  = DrCrFlag.D == drCrFlag ? amount : BigDecimal.ZERO;
         BigDecimal creditAmt = DrCrFlag.C == drCrFlag ? amount : BigDecimal.ZERO;
+        // Some downstream readers expect Account_No to be populated even for GL postings.
+        String postingAccountNo = (accountNo == null || accountNo.isBlank()) ? glNum : accountNo;
 
         return TranTable.builder()
                 .tranId(tranId)
@@ -343,7 +454,7 @@ public class BODSchedulerService {
                 .valueDate(valueDate)
                 .drCrFlag(drCrFlag)
                 .tranStatus(TranStatus.Posted)
-                .accountNo(accountNo)
+                .accountNo(postingAccountNo)
                 .glNum(glNum)
                 .tranCcy(ccy)
                 .fcyAmt(amount)

@@ -2,6 +2,7 @@ package com.example.moneymarket.controller;
 
 import com.example.moneymarket.dto.AccountOptionDTO;
 import com.example.moneymarket.service.StatementOfAccountsService;
+import com.example.moneymarket.service.SystemDateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -28,6 +29,7 @@ import java.util.NoSuchElementException;
 public class StatementOfAccountsController {
 
     private final StatementOfAccountsService soaService;
+    private final SystemDateService systemDateService;
 
     /**
      * Generate Statement of Accounts
@@ -125,9 +127,18 @@ public class StatementOfAccountsController {
         Map<String, Object> result = new HashMap<>();
 
         try {
+            LocalDate applicationDate = systemDateService.getSystemDate();
+
             if (fromDate.isAfter(toDate)) {
                 result.put("valid", false);
                 result.put("message", "From date must be before or equal to To date");
+                return ResponseEntity.ok(result);
+            }
+
+            if (fromDate.isAfter(applicationDate) || toDate.isAfter(applicationDate)) {
+                result.put("valid", false);
+                result.put("message", "From and To dates cannot be after the application date ("
+                        + applicationDate + ")");
                 return ResponseEntity.ok(result);
             }
 
