@@ -28,7 +28,7 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * Accounting events per BRD Section 7:
  *   INT_PAY Liability: DR Interest Expenditure GL  → CR Term Deposit Account
- *   INT_PAY Asset:     DR Loan Account             → CR Interest Income GL
+ *   INT_PAY Asset:     DR Interest Receivable GL    → CR Loan Account
  *   MAT_PAY Liability: DR Term Deposit Account     → CR Operative Account
  *   MAT_PAY Asset:     DR Loan Account             → CR Operative Account
  *
@@ -163,7 +163,7 @@ public class BODSchedulerService {
 
     /**
      * INT_PAY Liability: DR Interest Expenditure GL → CR Term Deposit Account
-     * INT_PAY Asset:     DR Loan Account            → CR Interest Income GL
+     * INT_PAY Asset:     DR Interest Receivable GL  → CR Loan Account
      */
     private void processIntPay(DealSchedule schedule, CustAcctMaster dealAccount,
                                 SubProdMaster subProduct, String ccy, LocalDate businessDate) {
@@ -196,17 +196,17 @@ public class BODSchedulerService {
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.C, amount);
 
         } else {
-            // Asset: DR Loan Account, CR Interest Income GL
+            // Asset INT_PAY: DR Interest Receivable GL (GL-only) → CR Loan Account (capitalize interest)
             String interestIncGL = subProduct.getInterestIncomePayableGLNum();
             if (interestIncGL == null) {
-                throw new IllegalStateException("Interest Income GL not configured for sub-product "
+                throw new IllegalStateException("Interest Receivable GL not configured for sub-product "
                         + subProduct.getSubProductCode());
             }
             saveTranEntry(buildTranEntry(baseTranId + "-1", businessDate, businessDate,
-                    DrCrFlag.D, schedule.getAccountNumber(), null, ccy, amount, narration, "BOD", EVENT_INT_PAY));
+                    DrCrFlag.D, null, interestIncGL, ccy, amount, narration, "BOD", EVENT_INT_PAY));
             saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
-                    DrCrFlag.C, null, interestIncGL, ccy, amount, narration, "BOD", EVENT_INT_PAY));
-            balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.D, amount);
+                    DrCrFlag.C, schedule.getAccountNumber(), null, ccy, amount, narration, "BOD", EVENT_INT_PAY));
+            balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.C, amount);
         }
 
         log.info("INT_PAY processed for account={} amount={}", schedule.getAccountNumber(), amount);
@@ -220,7 +220,9 @@ public class BODSchedulerService {
      * MAT_PAY Liability: DR Term Deposit Account → CR Operative Account
      * MAT_PAY Asset:     DR Loan Account         → CR Operative Account
      *
-     * The transfer amount is the deal account's current balance (absolute value).
+     * For Asset (Loan) maturity: the loan balance (principal + capitalized interest) is
+     * debited from the loan account (zeroing it) and credited to the operative account
+     * (repayment funds arrive). Uses the same sign convention as Liability TD closure.
      */
     private void processMatPay(DealSchedule schedule, CustAcctMaster dealAccount,
                                 String ccy, LocalDate businessDate) {
@@ -253,7 +255,9 @@ public class BODSchedulerService {
             balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.C, transferAmount);
 
         } else {
-            // Asset: DR Loan Account, CR Operative Account
+            // Asset MAT_PAY: loan closes out.
+            // DR Loan Account (zeroes the loan asset balance)
+            // CR Operative Account (repayment funds credited to customer's account)
             saveTranEntry(buildTranEntry(baseTranId + "-1", businessDate, businessDate,
                     DrCrFlag.D, schedule.getAccountNumber(), null, ccy, transferAmount, narration, "BOD", EVENT_MAT_PAY));
             saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
@@ -300,7 +304,7 @@ public class BODSchedulerService {
         return tranTableRepository.findByAccountNo(schedule.getAccountNumber()).stream()
                 .filter(t -> "BOOKING".equals(t.getTranSubType()))
                 .filter(t -> t.getTranStatus() == TranStatus.Posted || t.getTranStatus() == TranStatus.Verified)
-                .filter(t -> isLiability ? t.getDrCrFlag() == DrCrFlag.C : t.getDrCrFlag() == DrCrFlag.D)
+                .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
                 .map(t -> t.getFcyAmt() != null ? t.getFcyAmt() : BigDecimal.ZERO)
                 .findFirst()
                 .orElseGet(() -> {

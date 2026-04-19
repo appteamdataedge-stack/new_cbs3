@@ -289,8 +289,8 @@ public class DealBookingService {
      *   Entry -2: CR Deal (TD) Account  (deposit liability created)
      *
      * Asset Loan:
-     *   Entry -1: CR Operative Account  (loan funds arrive in operative)
-     *   Entry -2: DR Loan Account       (loan asset created for bank)
+     *   Entry -1: DR Operative Account  (loan disbursed to customer's operative)
+     *   Entry -2: CR Loan Account       (loan asset created for bank)
      *
      * Uses the system-standard tranId + "-N" suffix so that
      * TransactionService verify/post/get logic works correctly.
@@ -322,17 +322,17 @@ public class DealBookingService {
             balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.D, amount);
             balanceService.updateAccountBalance(dealAccountNo, DrCrFlag.C, amount);
         } else {
-            // Asset Loan: CR Operative Account (entry 1), DR Loan Account (entry 2)
+            // Asset Loan: DR Operative Account (entry 1), CR Loan Account (entry 2)
             tranTableRepository.save(buildTranTableEntry(
                     baseTranId + "-1", systemDate, request.getValueDate(),
-                    DrCrFlag.C, operativeAccNo, null,
+                    DrCrFlag.D, operativeAccNo, null,
                     request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING"));
             tranTableRepository.save(buildTranTableEntry(
                     baseTranId + "-2", systemDate, request.getValueDate(),
-                    DrCrFlag.D, dealAccountNo, null,
+                    DrCrFlag.C, dealAccountNo, null,
                     request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING"));
-            balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.C, amount);
-            balanceService.updateAccountBalance(dealAccountNo, DrCrFlag.D, amount);
+            balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.D, amount);
+            balanceService.updateAccountBalance(dealAccountNo, DrCrFlag.C, amount);
         }
 
         log.info("Initial funding posted: baseTranId={} isLiability={} amount={}",

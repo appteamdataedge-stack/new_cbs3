@@ -232,15 +232,14 @@ const TransactionForm = () => {
     };
   }, [watchedLines, accountBalances]);
 
-  // Set current date when available
+  // Set value date from application system date (parameter_table) when it loads.
+  // No fallback to new Date() — if the API is unavailable the field stays blank
+  // and the user must enter a date manually.
   useEffect(() => {
     if (systemDate && typeof systemDate === 'string') {
       setValue('valueDate', systemDate);
-    } else if (!isLoadingSystemDate) {
-      const today = new Date().toISOString().split('T')[0];
-      setValue('valueDate', today);
     }
-  }, [systemDate, isLoadingSystemDate, setValue]);
+  }, [systemDate, setValue]);
 
   // Helper function to get previous day opening balance (static value)
   const getPreviousDayOpeningBalance = (balance: AccountBalanceDTO | undefined): number => {

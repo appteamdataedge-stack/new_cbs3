@@ -48,6 +48,7 @@ import {
   downloadConsolidatedReport,
   handleBatchJobError,
 } from '../../api/batchJobService';
+import { getPendingScheduleCount } from '../../api/dealService';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,8 @@ const EOD = () => {
     open: boolean;
     data: EODVerificationStatus | null;
   }>({ open: false, data: null });
+  const [bodBlockDialog, setBodBlockDialog]   = useState(false);
+  const [pendingBodCount, setPendingBodCount] = useState(0);
   const [runningJobIds, setRunningJobIds] = useState<Set<number>>(new Set());
 
   // ── Batch-run state ─────────────────────────────────────────────────────
@@ -144,6 +147,12 @@ const EOD = () => {
       setSystemDate(eodStatus.systemDate);
       const statuses = await getEODJobStatuses();
       setJobStatuses(statuses);
+      try {
+        const bodCount = await getPendingScheduleCount();
+        setPendingBodCount(bodCount.totalCount);
+      } catch {
+        // BOD count is informational — don't fail the whole page load
+      }
     } catch {
       toast.error('Failed to fetch EOD data from server');
     } finally {
@@ -196,6 +205,12 @@ const EOD = () => {
     setRunningJobIds((prev) => new Set(prev).add(jobId));
     try {
       if (jobId === 1) {
+        const bodCount = await getPendingScheduleCount();
+        setPendingBodCount(bodCount.totalCount);
+        if (bodCount.totalCount > 0) {
+          setBodBlockDialog(true);
+          return;
+        }
         const v = await getEODVerificationStatus();
         if (!v.canProceedWithEOD) {
           setVerificationBlockDialog({ open: true, data: v });
@@ -294,6 +309,20 @@ const EOD = () => {
       try {
         // ── Pre-flight check for step 1 ──────────────────────────────────
         if (job.id === 1) {
+          const bodCount = await getPendingScheduleCount();
+          setPendingBodCount(bodCount.totalCount);
+          if (bodCount.totalCount > 0) {
+            setBodBlockDialog(true);
+            updateStepRecord(job.id, {
+              status: 'failed',
+              endTime: new Date(),
+              durationMs: Date.now() - stepStart.getTime(),
+              error: `Blocked: ${bodCount.totalCount} pending BOD schedule(s) must be executed first`,
+            });
+            allSuccess = false;
+            failedAt = job.id;
+            break;
+          }
           const v = await getEODVerificationStatus();
           if (!v.canProceedWithEOD) {
             setVerificationBlockDialog({ open: true, data: v });
@@ -470,6 +499,14 @@ const EOD = () => {
         EOD batch processing: 9 sequential steps. Each step must complete before the next begins.
         Use <strong>Run All EOD Steps</strong> for one-click automation, or run each step manually.
       </Alert>
+
+      {pendingBodCount > 0 && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <strong>BOD Required:</strong> There are <strong>{pendingBodCount}</strong> pending BOD schedule(s)
+          for today. EOD cannot start until BOD has been executed. Please go to{' '}
+          <strong>Deal Schedules</strong> and run BOD first.
+        </Alert>
+      )}
 
       {/* System Date */}
       <Card sx={{ mb: 3 }}>
@@ -855,6 +892,27 @@ const EOD = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* ── BOD required dialog ── */}
+      <Dialog open={bodBlockDialog} onClose={() => setBodBlockDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ color: 'warning.dark' }}>Cannot Start EOD — BOD Not Executed</DialogTitle>
+        <DialogContent>
+          <Typography paragraph>
+            EOD is blocked because there are <strong>{pendingBodCount}</strong> pending BOD schedule(s)
+            for today. Beginning of Day (BOD) processing must run before End of Day (EOD).
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Navigate to <strong>Deal Schedules</strong> and click <em>Execute BOD</em> to process
+            today's deal events (interest payments and maturity payments), then return here to run EOD.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setBodBlockDialog(false)}>Close</Button>
+          <Button variant="contained" color="warning" onClick={() => { setBodBlockDialog(false); navigate('/deal-schedules'); }}>
+            Go to Deal Schedules
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── Verification block dialog ── */}
       <Dialog open={verificationBlockDialog.open} onClose={() => setVerificationBlockDialog({ open: false, data: null })} maxWidth="sm" fullWidth>
