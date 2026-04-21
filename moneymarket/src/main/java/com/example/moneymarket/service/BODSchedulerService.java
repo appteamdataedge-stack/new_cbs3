@@ -28,9 +28,9 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * Accounting events per BRD Section 7:
  *   INT_PAY Liability: DR Interest Expenditure GL  → CR Term Deposit Account
- *   INT_PAY Asset:     DR Interest Receivable GL    → CR Loan Account
+ *   INT_PAY Asset:     DR Interest Receivable GL    → DR Loan Account  (tran_table DR; balance update CR)
  *   MAT_PAY Liability: DR Term Deposit Account     → CR Operative Account
- *   MAT_PAY Asset:     DR Loan Account             → CR Operative Account
+ *   MAT_PAY Asset:     CR Loan Account             → CR Operative Account  (tran_table CR; balance update DR)
  *
  * FIX: Each schedule runs in its own REQUIRES_NEW transaction via self-injection
  * (self.executeSingleSchedule) so that one failure does not roll back others.
@@ -56,6 +56,7 @@ public class BODSchedulerService {
     private final BodExecutionLogRepository bodExecutionLogRepository;
     private final BalanceService           balanceService;
     private final SystemDateService        systemDateService;
+    private final TransactionHistoryService transactionHistoryService;
 
     /**
      * Self-reference injected via @Lazy to allow REQUIRES_NEW to work on
@@ -196,7 +197,10 @@ public class BODSchedulerService {
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.C, amount);
 
         } else {
-            // Asset INT_PAY: DR Interest Receivable GL (GL-only) → CR Loan Account (capitalize interest)
+            // Asset INT_PAY: DR Interest Receivable GL → DR Loan Account (interest accrues on loan)
+            // Loan account entry uses DrCrFlag.D so the account statement shows a debit
+            // (interest increases what the customer owes). Balance update still uses C so
+            // currentBalance remains negative (more owed).
             String interestIncGL = subProduct.getInterestIncomePayableGLNum();
             if (interestIncGL == null) {
                 throw new IllegalStateException("Interest Receivable GL not configured for sub-product "
@@ -205,7 +209,7 @@ public class BODSchedulerService {
             saveTranEntry(buildTranEntry(baseTranId + "-1", businessDate, businessDate,
                     DrCrFlag.D, null, interestIncGL, ccy, amount, narration, "BOD", EVENT_INT_PAY));
             saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
-                    DrCrFlag.C, schedule.getAccountNumber(), null, ccy, amount, narration, "BOD", EVENT_INT_PAY));
+                    DrCrFlag.D, schedule.getAccountNumber(), null, ccy, amount, narration, "BOD", EVENT_INT_PAY));
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.C, amount);
         }
 
@@ -218,11 +222,11 @@ public class BODSchedulerService {
 
     /**
      * MAT_PAY Liability: DR Term Deposit Account → CR Operative Account
-     * MAT_PAY Asset:     DR Loan Account         → CR Operative Account
+     * MAT_PAY Asset:     CR Loan Account         → CR Operative Account
      *
-     * For Asset (Loan) maturity: the loan balance (principal + capitalized interest) is
-     * debited from the loan account (zeroing it) and credited to the operative account
-     * (repayment funds arrive). Uses the same sign convention as Liability TD closure.
+     * For Asset (Loan) maturity: the loan account gets a CR entry (account statement shows
+     * customer repaying the debt). The balance update uses DR (add) to bring the negative
+     * loan balance back to zero. The operative account is CR'd (repayment received).
      */
     private void processMatPay(DealSchedule schedule, CustAcctMaster dealAccount,
                                 String ccy, LocalDate businessDate) {
@@ -256,10 +260,11 @@ public class BODSchedulerService {
 
         } else {
             // Asset MAT_PAY: loan closes out.
-            // DR Loan Account (zeroes the loan asset balance)
+            // CR Loan Account (statement shows credit = customer repays, zeroes balance)
             // CR Operative Account (repayment funds credited to customer's account)
+            // Balance update uses DrCrFlag.D (add) to bring the negative loan balance back to 0.
             saveTranEntry(buildTranEntry(baseTranId + "-1", businessDate, businessDate,
-                    DrCrFlag.D, schedule.getAccountNumber(), null, ccy, transferAmount, narration, "BOD", EVENT_MAT_PAY));
+                    DrCrFlag.C, schedule.getAccountNumber(), null, ccy, transferAmount, narration, "BOD", EVENT_MAT_PAY));
             saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
                     DrCrFlag.C, operativeAccNo, null, ccy, transferAmount, narration, "BOD", EVENT_MAT_PAY));
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.D, transferAmount);
@@ -281,9 +286,13 @@ public class BODSchedulerService {
      */
     private BigDecimal calculateMaturityAmount(DealSchedule schedule, LocalDate businessDate) {
         BigDecimal principal = getBookedPrincipalAmount(schedule);
+        // Liability INT_PAY entries are CR on the deal account; Asset INT_PAY entries are DR
+        // (they were changed to DR so the account statement shows the correct indicator).
+        boolean isLiability = "L".equals(schedule.getDealType());
+        DrCrFlag intPayFlag = isLiability ? DrCrFlag.C : DrCrFlag.D;
         BigDecimal totalInterest = tranTableRepository.findByAccountNo(schedule.getAccountNumber()).stream()
                 .filter(t -> EVENT_INT_PAY.equals(t.getTranSubType()))
-                .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                .filter(t -> t.getDrCrFlag() == intPayFlag)
                 .filter(t -> t.getTranDate() != null && !t.getTranDate().isAfter(businessDate))
                 .map(t -> t.getFcyAmt() != null ? t.getFcyAmt() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -301,10 +310,12 @@ public class BODSchedulerService {
      */
     private BigDecimal getBookedPrincipalAmount(DealSchedule schedule) {
         boolean isLiability = "L".equals(schedule.getDealType());
+        // Liability booking entries are CR on the deal account; Asset booking entries are DR.
+        DrCrFlag bookingFlag = isLiability ? DrCrFlag.C : DrCrFlag.D;
         return tranTableRepository.findByAccountNo(schedule.getAccountNumber()).stream()
                 .filter(t -> "BOOKING".equals(t.getTranSubType()))
                 .filter(t -> t.getTranStatus() == TranStatus.Posted || t.getTranStatus() == TranStatus.Verified)
-                .filter(t -> t.getDrCrFlag() == DrCrFlag.C)
+                .filter(t -> t.getDrCrFlag() == bookingFlag)
                 .map(t -> t.getFcyAmt() != null ? t.getFcyAmt() : BigDecimal.ZERO)
                 .findFirst()
                 .orElseGet(() -> {
@@ -474,6 +485,10 @@ public class BODSchedulerService {
 
     private void saveTranEntry(TranTable entry) {
         tranTableRepository.save(entry);
+        // Record transaction history so the Account Statement shows BOD events.
+        // Called before the subsequent balanceService.updateAccountBalance so that
+        // openingBalance is read from acct_bal before the current event changes it.
+        transactionHistoryService.createTransactionHistory(entry, SYSTEM_USER);
     }
 
     /** Generates a BOD transaction ID: B + yyyyMMdd + 6-digit-seq + 3-digit-random (18 chars). */

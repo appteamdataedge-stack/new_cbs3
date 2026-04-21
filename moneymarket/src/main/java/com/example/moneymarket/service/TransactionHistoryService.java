@@ -71,6 +71,13 @@ public class TransactionHistoryService {
                 return; // Don't fail transaction verification
             }
 
+            // Idempotency guard: skip if this (tranId, accNo) pair is already recorded.
+            // Prevents duplicate rows on BOD retries or any other double-invocation.
+            if (txnHistAcctRepository.existsByTranIdAndAccNo(tranId, accountNo)) {
+                log.debug("Transaction history already exists for tranId={} accNo={}, skipping duplicate", tranId, accountNo);
+                return;
+            }
+
         // Step 3: Get Opening Balance based on whether this is FIRST or SUBSEQUENT transaction of the day
         BigDecimal openingBalance = getOpeningBalanceForTransaction(accountNo, tranDate);
 
@@ -232,15 +239,20 @@ public class TransactionHistoryService {
         if (latestBalance.isPresent()) {
             AcctBal acctBal = latestBalance.get();
 
-            // Prefer closing_bal if available, otherwise use current_balance
-            BigDecimal balance = acctBal.getClosingBal() != null
-                    ? acctBal.getClosingBal()
-                    : acctBal.getCurrentBalance();
+            // Deal accounts (and any account where EOD hasn't run yet) have closingBal=0
+            // while currentBalance reflects the true running balance. Prefer closingBal only
+            // when it is non-zero; otherwise fall back to currentBalance so that the
+            // opening balance for the NEXT transaction is accurate.
+            BigDecimal closingBal = acctBal.getClosingBal();
+            BigDecimal currentBal = acctBal.getCurrentBalance();
+            BigDecimal balance = (closingBal != null && closingBal.compareTo(BigDecimal.ZERO) != 0)
+                    ? closingBal
+                    : (currentBal != null ? currentBal : BigDecimal.ZERO);
 
-            log.debug("Found acct_bal record for account {} on date {}. Using closing balance: {}",
+            log.debug("Found acct_bal record for account {} on date {}. Using balance: {}",
                     accountNo, acctBal.getTranDate(), balance);
 
-            return balance != null ? balance : BigDecimal.ZERO;
+            return balance;
         }
 
         // Fallback: Try to get from txn_hist_acct if no acct_bal record exists

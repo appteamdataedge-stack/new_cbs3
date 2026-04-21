@@ -59,6 +59,7 @@ public class DealBookingService {
     private final AccountNumberService accountNumberService;
     private final BalanceService balanceService;
     private final SystemDateService systemDateService;
+    private final TransactionHistoryService transactionHistoryService;
 
     // -------------------------------------------------------------------------
     // Public API
@@ -309,31 +310,29 @@ public class DealBookingService {
         // Both lines share one base tranId; individual lines get "-1" / "-2" suffix
         String baseTranId = generateDealTranId(systemDate);
 
-        if (isLiability) {
-            // Liability TD: DR Operative (entry 1), CR Deal Account (entry 2)
-            tranTableRepository.save(buildTranTableEntry(
-                    baseTranId + "-1", systemDate, request.getValueDate(),
-                    DrCrFlag.D, operativeAccNo, null,
-                    request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING"));
-            tranTableRepository.save(buildTranTableEntry(
-                    baseTranId + "-2", systemDate, request.getValueDate(),
-                    DrCrFlag.C, dealAccountNo, null,
-                    request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING"));
-            balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.D, amount);
-            balanceService.updateAccountBalance(dealAccountNo, DrCrFlag.C, amount);
-        } else {
-            // Asset Loan: DR Operative Account (entry 1), CR Loan Account (entry 2)
-            tranTableRepository.save(buildTranTableEntry(
-                    baseTranId + "-1", systemDate, request.getValueDate(),
-                    DrCrFlag.D, operativeAccNo, null,
-                    request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING"));
-            tranTableRepository.save(buildTranTableEntry(
-                    baseTranId + "-2", systemDate, request.getValueDate(),
-                    DrCrFlag.C, dealAccountNo, null,
-                    request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING"));
-            balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.D, amount);
-            balanceService.updateAccountBalance(dealAccountNo, DrCrFlag.C, amount);
-        }
+        // Liability TD: DR Operative (entry 1), CR Deal Account (entry 2)
+        // Asset Loan:   DR Operative (entry 1), DR Loan Account (entry 2)
+        //   — Asset entry 2 uses DR so the account statement shows the customer in debt;
+        //     balance update still uses C so currentBalance goes negative (D=add/C=subtract convention).
+        DrCrFlag dealAccountFlag = isLiability ? DrCrFlag.C : DrCrFlag.D;
+
+        TranTable entry1 = buildTranTableEntry(
+                baseTranId + "-1", systemDate, request.getValueDate(),
+                DrCrFlag.D, operativeAccNo, null,
+                request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING");
+        TranTable entry2 = buildTranTableEntry(
+                baseTranId + "-2", systemDate, request.getValueDate(),
+                dealAccountFlag, dealAccountNo, null,
+                request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING");
+
+        // Save and record history BEFORE balance updates so opening balance is read correctly.
+        tranTableRepository.save(entry1);
+        transactionHistoryService.createTransactionHistory(entry1, SYSTEM_USER);
+        tranTableRepository.save(entry2);
+        transactionHistoryService.createTransactionHistory(entry2, SYSTEM_USER);
+
+        balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.D, amount);
+        balanceService.updateAccountBalance(dealAccountNo, DrCrFlag.C, amount);
 
         log.info("Initial funding posted: baseTranId={} isLiability={} amount={}",
                 baseTranId, isLiability, amount);

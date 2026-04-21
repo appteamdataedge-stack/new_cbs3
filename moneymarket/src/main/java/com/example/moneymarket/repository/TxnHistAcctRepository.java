@@ -93,5 +93,12 @@ public interface TxnHistAcctRepository extends JpaRepository<TxnHistAcct, Long> 
      * @return List of transactions for the specified date
      */
     List<TxnHistAcct> findByAccNoAndTranDateOrderByRcreTimeAsc(String accNo, LocalDate tranDate);
+
+    /**
+     * Check whether a history record already exists for the given transaction leg.
+     * Used as an idempotency guard in createTransactionHistory to prevent duplicate rows
+     * when a tran entry is processed more than once (e.g., on BOD retry).
+     */
+    boolean existsByTranIdAndAccNo(String tranId, String accNo);
 }
 
