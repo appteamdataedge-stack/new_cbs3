@@ -55,8 +55,12 @@ class EODStep8ConsolidatedReportServiceTest {
 
     @Mock
     private TranTableRepository tranTableRepository;
+
     @Mock
     private FxPositionRepository fxPositionRepository;
+
+    @Mock
+    private InterestRateMasterRepository interestRateMasterRepository;
 
     @Mock
     private SystemDateService systemDateService;
@@ -104,6 +108,8 @@ class EODStep8ConsolidatedReportServiceTest {
         when(glBalanceRepository.findByTranDateAndGlNumIn(eq(testDate), anyList()))
                 .thenReturn(new ArrayList<>(Arrays.asList(glBalance)));
         when(glBalanceRepository.findByGlNumAndTranDate(eq("110101001"), eq(testDate))).thenReturn(Optional.of(glBalance));
+        // getInterestBalanceReportData calls findByTranDate; no interest GLs in test data so empty is fine
+        when(glBalanceRepository.findByTranDate(testDate)).thenReturn(new ArrayList<>());
 
         CustAcctMaster custAcct = new CustAcctMaster();
         custAcct.setAccountNo("CM001001");
@@ -128,7 +134,9 @@ class EODStep8ConsolidatedReportServiceTest {
         assertTrue(result.length > 0, "Consolidated report should have content");
 
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(result))) {
-            assertEquals(6, workbook.getNumberOfSheets(), "Workbook should have 6 sheets");
+            // Sheets: Trial Balance, Balance Sheet, Subproduct GL Balance, Account Balance Report,
+            //         FX Position Report, Interest Balance Report (new), + 1 per-subproduct detail
+            assertEquals(7, workbook.getNumberOfSheets(), "Workbook should have 7 sheets");
 
             Sheet trialBalanceSheet = workbook.getSheet("Trial Balance");
             assertNotNull(trialBalanceSheet, "Trial Balance sheet should exist");
@@ -141,6 +149,9 @@ class EODStep8ConsolidatedReportServiceTest {
 
             Sheet fxPositionSheet = workbook.getSheet("FX Position Report");
             assertNotNull(fxPositionSheet, "FX Position Report sheet should exist");
+
+            Sheet interestBalanceSheet = workbook.getSheet("Interest Balance Report");
+            assertNotNull(interestBalanceSheet, "Interest Balance Report sheet should exist");
 
             Sheet accountBalanceSheet = workbook.getSheetAt(4);
             assertNotNull(accountBalanceSheet, "Account Balance detail sheet should exist");
@@ -189,6 +200,7 @@ class EODStep8ConsolidatedReportServiceTest {
         when(ofAcctMasterRepository.findBySubProductSubProductId(anyInt())).thenReturn(new ArrayList<>());
         when(acctBalRepository.findByAccountNoInAndTranDate(anyList(), eq(testDate))).thenReturn(new ArrayList<>());
         when(acctBalLcyRepository.findByAccountNoInAndTranDate(anyList(), eq(testDate))).thenReturn(new ArrayList<>());
+        when(glBalanceRepository.findByTranDate(testDate)).thenReturn(new ArrayList<>());
 
         byte[] result = reportService.generateConsolidatedReport(testDate);
 
@@ -196,8 +208,8 @@ class EODStep8ConsolidatedReportServiceTest {
         assertTrue(result.length > 0);
 
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(result))) {
-            assertEquals(7, workbook.getNumberOfSheets(),
-                    "Workbook should have 7 sheets (6 base + 1 extra subproduct detail sheet)");
+            assertEquals(8, workbook.getNumberOfSheets(),
+                    "Workbook should have 8 sheets (6 base + 2 subproduct detail sheets)");
 
             Sheet subproductSheet = workbook.getSheet("Subproduct GL Balance Report");
             assertNotNull(subproductSheet);
@@ -217,6 +229,7 @@ class EODStep8ConsolidatedReportServiceTest {
         when(glBalanceRepository.findByTranDateAndGlNumIn(eq(testDate), anyList()))
                 .thenReturn(new ArrayList<>(Arrays.asList(glBalance)));
         when(glBalanceRepository.findByGlNumAndTranDate(eq("110101001"), eq(testDate))).thenReturn(Optional.of(glBalance));
+        when(glBalanceRepository.findByTranDate(testDate)).thenReturn(new ArrayList<>());
 
         CustAcctMaster custAcct = new CustAcctMaster();
         custAcct.setAccountNo("CM001001");
@@ -275,7 +288,7 @@ class EODStep8ConsolidatedReportServiceTest {
         assertTrue(result.length > 0);
 
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(result))) {
-            assertEquals(6, workbook.getNumberOfSheets(), "Workbook should have 6 sheets even with no data");
+            assertEquals(7, workbook.getNumberOfSheets(), "Workbook should have 7 sheets even with no data");
 
             Sheet accountBalanceSheet = workbook.getSheetAt(4);
             assertNotNull(accountBalanceSheet);
@@ -296,7 +309,8 @@ class EODStep8ConsolidatedReportServiceTest {
         EODStep8ConsolidatedReportService service = new EODStep8ConsolidatedReportService(
                 glBalanceRepository, glSetupRepository, subProdMasterRepository,
                 custAcctMasterRepository, ofAcctMasterRepository, acctBalRepository,
-                acctBalLcyRepository, tranTableRepository, fxPositionRepository, systemDateService);
+                acctBalLcyRepository, tranTableRepository, fxPositionRepository,
+                interestRateMasterRepository, systemDateService);
 
         String result = service.truncateSheetName(longName);
         

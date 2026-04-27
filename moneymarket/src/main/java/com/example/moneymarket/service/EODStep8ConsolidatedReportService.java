@@ -43,6 +43,7 @@ public class EODStep8ConsolidatedReportService {
     private final AcctBalLcyRepository acctBalLcyRepository;
     private final TranTableRepository tranTableRepository;
     private final FxPositionRepository fxPositionRepository;
+    private final InterestRateMasterRepository interestRateMasterRepository;
     private final SystemDateService systemDateService;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
@@ -82,7 +83,11 @@ public class EODStep8ConsolidatedReportService {
             log.info("Generating Sheet 5: FX Position Report");
             createFxPositionReportSheet(workbook, eodDate);
 
-            // Sheets 6+: Account Balance Report (one sheet per subproduct)
+            // Sheet 6: Interest Balance Report
+            log.info("Generating Sheet 6: Interest Balance Report");
+            generateInterestBalanceReportSheet(workbook, eodDate);
+
+            // Sheets 7+: Account Balance Report (one sheet per subproduct)
             log.info("Generating Account Balance Report sheets (one per subproduct)");
             generateAccountBalanceSheets(workbook, eodDate, subproductSheetIndex);
 
@@ -206,15 +211,15 @@ public class EODStep8ConsolidatedReportService {
                 : glBalanceRepository.findByTranDateAndGlNumIn(eodDate, balanceSheetGLs);
 
         ensureFxGLsPresent(glBalances, eodDate);
-        ensurePositionGLsPresent(glBalances, eodDate);
+        // Position accounts (920xxx) are off-balance-sheet; do not include them here.
 
         List<GLBalance> liabilities = glBalances.stream()
-                .filter(gl -> gl.getGlNum().startsWith("1"))
+                .filter(gl -> gl.getGlNum().startsWith("1") && !gl.getGlNum().startsWith("920"))
                 .sorted(Comparator.comparing(GLBalance::getGlNum))
                 .collect(Collectors.toList());
 
         List<GLBalance> assets = glBalances.stream()
-                .filter(gl -> gl.getGlNum().startsWith("2"))
+                .filter(gl -> gl.getGlNum().startsWith("2") && !gl.getGlNum().startsWith("920"))
                 .sorted(Comparator.comparing(GLBalance::getGlNum))
                 .collect(Collectors.toList());
 
@@ -297,10 +302,11 @@ public class EODStep8ConsolidatedReportService {
         createStyledCell(totalRow, 4, "TOTAL ASSETS", totalStyle);
         setFormula(totalRow, 6, buildSumFormula("G", dataStartRow, dataEndRow), totalStyle);
 
-        // DIFFERENCE / balance check row
+        // DIFFERENCE / balance check row — balanced books: Liabilities + Assets = 0
+        // (Liability closingBals are positive, Asset closingBals are negative in gl_balance)
         int diffRowIdx = rowNum;
         Row diffRow = sheet.createRow(rowNum++);
-        createStyledCell(diffRow, 0, "DIFFERENCE (Assets + Liabilities)", totalStyle);
+        createStyledCell(diffRow, 0, "DIFFERENCE (Liabilities + Assets)", totalStyle);
         setFormula(diffRow, 1, String.format("G%d+C%d", totalRowIdx + 1, totalRowIdx + 1), totalStyle);
         createStyledCell(diffRow, 4, "Status:", totalStyle);
         setFormula(
@@ -1130,6 +1136,150 @@ public class EODStep8ConsolidatedReportService {
         }
     }
 
+    public List<InterestBalanceReportRow> getInterestBalanceReportData(LocalDate eodDate) {
+        if (eodDate == null) eodDate = systemDateService.getSystemDate();
+
+        List<SubProdMaster> subProducts = subProdMasterRepository.findAllActiveSubProducts();
+
+        Map<String, SubProdMaster> glToSubProd = new HashMap<>();
+        for (SubProdMaster sp : subProducts) {
+            if (sp.getCumGLNum() != null) glToSubProd.put(sp.getCumGLNum(), sp);
+            if (sp.getInterestIncomePayableGLNum() != null) glToSubProd.put(sp.getInterestIncomePayableGLNum(), sp);
+        }
+
+        List<GLBalance> interestGlBalances = glBalanceRepository.findByTranDate(eodDate).stream()
+                .filter(gl -> isInterestGL(gl.getGlNum()))
+                .sorted(Comparator.comparing(GLBalance::getGlNum))
+                .collect(Collectors.toList());
+
+        Map<String, BigDecimal> fcyBalByGl = new HashMap<>();
+        Map<String, BigDecimal> lcyBalByGl = new HashMap<>();
+        Map<String, String> currencyByGl = new HashMap<>();
+
+        for (SubProdMaster sp : subProducts) {
+            String glNum = sp.getCumGLNum();
+            if (glNum == null || !isInterestGL(glNum)) continue;
+
+            List<CustAcctMaster> custAccts = custAcctMasterRepository.findBySubProductSubProductId(sp.getSubProductId());
+            List<OFAcctMaster> ofAccts = ofAcctMasterRepository.findBySubProductSubProductId(sp.getSubProductId());
+
+            List<String> accountNos = new ArrayList<>();
+            custAccts.forEach(a -> accountNos.add(a.getAccountNo()));
+            ofAccts.forEach(a -> accountNos.add(a.getAccountNo()));
+
+            if (accountNos.isEmpty()) continue;
+
+            Map<String, AcctBal> acctBalMap = acctBalRepository.findByAccountNoInAndTranDate(accountNos, eodDate)
+                    .stream().collect(Collectors.toMap(AcctBal::getAccountNo, ab -> ab));
+            Map<String, AcctBalLcy> acctBalLcyMap = acctBalLcyRepository.findByAccountNoInAndTranDate(accountNos, eodDate)
+                    .stream().collect(Collectors.toMap(AcctBalLcy::getAccountNo, ab -> ab));
+
+            BigDecimal totalFcy = BigDecimal.ZERO;
+            BigDecimal totalLcy = BigDecimal.ZERO;
+            String glCurrency = LCY;
+
+            for (String accNo : accountNos) {
+                AcctBal ab = acctBalMap.get(accNo);
+                if (ab == null) continue;
+                String ccy = ab.getAccountCcy() != null ? ab.getAccountCcy() : LCY;
+                BigDecimal fcyClosing = ab.getClosingBal() != null ? ab.getClosingBal().abs() : BigDecimal.ZERO;
+
+                if (LCY.equals(ccy)) {
+                    totalLcy = totalLcy.add(fcyClosing);
+                } else {
+                    AcctBalLcy lcyRec = acctBalLcyMap.get(accNo);
+                    BigDecimal lcyAmt = (lcyRec != null && lcyRec.getClosingBalLcy() != null)
+                            ? lcyRec.getClosingBalLcy().abs() : BigDecimal.ZERO;
+                    totalFcy = totalFcy.add(fcyClosing);
+                    totalLcy = totalLcy.add(lcyAmt);
+                    glCurrency = ccy;
+                }
+            }
+
+            fcyBalByGl.merge(glNum, totalFcy, BigDecimal::add);
+            lcyBalByGl.merge(glNum, totalLcy, BigDecimal::add);
+            currencyByGl.put(glNum, totalFcy.compareTo(BigDecimal.ZERO) > 0 ? glCurrency : LCY);
+        }
+
+        List<InterestBalanceReportRow> rows = new ArrayList<>();
+        for (GLBalance glBal : interestGlBalances) {
+            String glNum = glBal.getGlNum();
+            BigDecimal glBalance = nvl(glBal.getClosingBal()).abs();
+            BigDecimal fcyBal = fcyBalByGl.getOrDefault(glNum, BigDecimal.ZERO);
+            BigDecimal lcyBal = lcyBalByGl.getOrDefault(glNum, glBalance);
+            String currency = currencyByGl.getOrDefault(glNum, LCY);
+            String interestRate = getInterestRateDisplay(glToSubProd.get(glNum), eodDate);
+
+            rows.add(InterestBalanceReportRow.builder()
+                    .glCode(glNum)
+                    .glName(getGLName(glNum))
+                    .interestRate(interestRate)
+                    .fcyBalance(fcyBal)
+                    .lcyBalance(lcyBal)
+                    .glBalance(glBalance)
+                    .currency(currency)
+                    .build());
+        }
+
+        return rows;
+    }
+
+    private void generateInterestBalanceReportSheet(XSSFWorkbook workbook, LocalDate eodDate) {
+        Sheet sheet = workbook.createSheet("Interest Balance Report");
+        CellStyle titleStyle = createHeaderStyle(workbook);
+        CellStyle headerStyle = createColumnHeaderStyle(workbook);
+        CellStyle numberStyle = createNumberStyle(workbook);
+        CellStyle dataStyle = createDataStyle(workbook);
+
+        Row titleRow = sheet.createRow(0);
+        Cell titleCell = titleRow.createCell(0);
+        titleCell.setCellValue("INTEREST BALANCE REPORT - " + eodDate.format(DATE_FORMATTER));
+        titleCell.setCellStyle(titleStyle);
+        sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 6));
+
+        Row headerRow = sheet.createRow(2);
+        String[] headers = {"GL Code", "GL Name", "Interest Rate", "FCY Balance", "LCY Balance", "GL Balance", "Currency"};
+        for (int i = 0; i < headers.length; i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        List<InterestBalanceReportRow> rows = getInterestBalanceReportData(eodDate);
+        int rowNum = 3;
+        for (InterestBalanceReportRow row : rows) {
+            Row excelRow = sheet.createRow(rowNum++);
+            createStyledCell(excelRow, 0, row.getGlCode(), dataStyle);
+            createStyledCell(excelRow, 1, row.getGlName(), dataStyle);
+            createStyledCell(excelRow, 2, row.getInterestRate(), dataStyle);
+            createStyledNumericCell(excelRow, 3, row.getFcyBalance(), numberStyle);
+            createStyledNumericCell(excelRow, 4, row.getLcyBalance(), numberStyle);
+            createStyledNumericCell(excelRow, 5, row.getGlBalance(), numberStyle);
+            createStyledCell(excelRow, 6, row.getCurrency(), dataStyle);
+        }
+
+        for (int i = 0; i < headers.length; i++) {
+            sheet.autoSizeColumn(i);
+            sheet.setColumnWidth(i, sheet.getColumnWidth(i) + 800);
+        }
+        log.info("Interest Balance Report sheet generated: {} rows", rows.size());
+    }
+
+    private boolean isInterestGL(String glNum) {
+        if (glNum == null || glNum.length() < 3) return false;
+        String prefix = glNum.substring(0, 3);
+        return "130".equals(prefix) || "140".equals(prefix) || "230".equals(prefix) || "240".equals(prefix);
+    }
+
+    private String getInterestRateDisplay(SubProdMaster subProd, LocalDate eodDate) {
+        if (subProd == null || subProd.getInttCode() == null) return "N/A";
+        return interestRateMasterRepository
+                .findTopByInttCodeAndInttEffctvDateLessThanEqualOrderByInttEffctvDateDesc(
+                        subProd.getInttCode(), eodDate)
+                .map(rate -> rate.getInttRate().toPlainString() + "%")
+                .orElse("N/A");
+    }
+
     private void createFxPositionReportSheet(XSSFWorkbook workbook, LocalDate eodDate) {
         Sheet sheet = workbook.createSheet("FX Position Report");
         CellStyle headerStyle = createColumnHeaderStyle(workbook);
@@ -1315,6 +1465,20 @@ public class EODStep8ConsolidatedReportService {
         private BigDecimal totalLCYBalance;
         private BigDecimal glBalance;
         private boolean fcyAccountsExist;
+    }
+
+    @lombok.Data
+    @lombok.Builder
+    @lombok.NoArgsConstructor
+    @lombok.AllArgsConstructor
+    public static class InterestBalanceReportRow {
+        private String glCode;
+        private String glName;
+        private String interestRate;
+        private BigDecimal fcyBalance;
+        private BigDecimal lcyBalance;
+        private BigDecimal glBalance;
+        private String currency;
     }
 
     @lombok.Data

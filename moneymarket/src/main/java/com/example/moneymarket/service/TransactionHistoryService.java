@@ -233,40 +233,34 @@ public class TransactionHistoryService {
      * @return Last closing balance
      */
     private BigDecimal getLastClosingBalanceFromAcctBal(String accountNo, LocalDate tranDate) {
-        // Try to get the most recent balance from acct_bal (on or before tranDate)
-        Optional<AcctBal> latestBalance = acctBalRepository.findLatestByAccountNo(accountNo);
+        // txn_hist_acct is the authoritative source: it is already stored in statement
+        // convention (C=add, D=subtract) so the chain of running balances is self-consistent.
+        // acct_bal uses an internal convention (D=add, C=subtract) that diverges from the
+        // statement convention for Liability accounts — reading it first causes wrong running
+        // balances on the first transaction of a new day.
+        Optional<TxnHistAcct> lastTransaction = txnHistAcctRepository.findLastTransactionBeforeDate(
+                accountNo, tranDate.plusDays(1));
 
+        if (lastTransaction.isPresent()) {
+            BigDecimal balance = lastTransaction.get().getBalanceAfterTran();
+            log.debug("Using last txn_hist_acct balance for account {}: {}", accountNo, balance);
+            return balance;
+        }
+
+        // Fall back to acct_bal only for accounts with no prior txn_hist_acct records.
+        // For brand-new accounts currentBalance=0, so the sign-convention difference does not apply.
+        Optional<AcctBal> latestBalance = acctBalRepository.findLatestByAccountNo(accountNo);
         if (latestBalance.isPresent()) {
             AcctBal acctBal = latestBalance.get();
-
-            // Deal accounts (and any account where EOD hasn't run yet) have closingBal=0
-            // while currentBalance reflects the true running balance. Prefer closingBal only
-            // when it is non-zero; otherwise fall back to currentBalance so that the
-            // opening balance for the NEXT transaction is accurate.
             BigDecimal closingBal = acctBal.getClosingBal();
             BigDecimal currentBal = acctBal.getCurrentBalance();
             BigDecimal balance = (closingBal != null && closingBal.compareTo(BigDecimal.ZERO) != 0)
                     ? closingBal
                     : (currentBal != null ? currentBal : BigDecimal.ZERO);
-
-            log.debug("Found acct_bal record for account {} on date {}. Using balance: {}",
-                    accountNo, acctBal.getTranDate(), balance);
-
+            log.debug("No txn_hist_acct found for account {}. Using acct_bal balance: {}", accountNo, balance);
             return balance;
         }
 
-        // Fallback: Try to get from txn_hist_acct if no acct_bal record exists
-        Optional<TxnHistAcct> lastTransaction = txnHistAcctRepository.findLastTransactionBeforeDate(
-                accountNo, tranDate.plusDays(1)); // +1 to include same day if checking before first tran
-
-        if (lastTransaction.isPresent()) {
-            BigDecimal balance = lastTransaction.get().getBalanceAfterTran();
-            log.debug("No acct_bal found for account {}. Using last transaction balance: {}",
-                    accountNo, balance);
-            return balance;
-        }
-
-        // Default to 0 for new accounts
         log.debug("No previous balance found for account {} (new account). Using opening balance: 0", accountNo);
         return BigDecimal.ZERO;
     }

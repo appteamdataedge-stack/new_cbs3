@@ -234,6 +234,28 @@ export const downloadConsolidatedReport = async (eodDate: string): Promise<void>
   }
 };
 
+export interface InterestBalanceReportRow {
+  glCode: string;
+  glName: string;
+  interestRate: string;
+  fcyBalance: number;
+  lcyBalance: number;
+  glBalance: number;
+  currency: string;
+}
+
+/**
+ * Fetch Interest Balance Report data (GL codes 130/140/230/240) as JSON
+ */
+export const fetchInterestBalanceReport = async (eodDate?: string): Promise<InterestBalanceReportRow[]> => {
+  const response = await apiRequest<InterestBalanceReportRow[]>({
+    method: 'GET',
+    url: '/eod-step8/interest-balance-report',
+    params: eodDate ? { eodDate } : undefined,
+  });
+  return response;
+};
+
 /**
  * Error handler for batch job operations
  */

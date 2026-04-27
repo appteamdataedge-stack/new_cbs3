@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -73,6 +74,28 @@ public class EODStep8ConsolidatedReportController {
             errorResponse.put("message", "An error occurred while generating the consolidated report: " + e.getMessage());
             errorResponse.put("timestamp", LocalDateTime.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    /**
+     * Get Interest Balance Report data as JSON
+     * Returns GL codes 130xxx/140xxx/230xxx/240xxx with interest rates and balances
+     */
+    @GetMapping("/interest-balance-report")
+    public ResponseEntity<?> getInterestBalanceReport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate eodDate) {
+        try {
+            log.info("API Request: Get Interest Balance Report data for date: {}", eodDate);
+            List<EODStep8ConsolidatedReportService.InterestBalanceReportRow> data =
+                    reportService.getInterestBalanceReportData(eodDate);
+            return ResponseEntity.ok(data);
+        } catch (Exception e) {
+            log.error("Error fetching interest balance report data: {}", e.getMessage(), e);
+            Map<String, Object> err = new HashMap<>();
+            err.put("status", "ERROR");
+            err.put("message", "Failed to fetch interest balance report: " + e.getMessage());
+            err.put("timestamp", LocalDateTime.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(err);
         }
     }
 

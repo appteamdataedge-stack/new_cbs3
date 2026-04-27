@@ -17,11 +17,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -33,6 +36,7 @@ import java.util.stream.Collectors;
 public class StatementOfAccountsService {
 
     private final TxnHistAcctRepository txnHistAcctRepository;
+    private final TranTableRepository tranTableRepository;
     private final CustAcctMasterRepository custAcctMasterRepository;
     private final OFAcctMasterRepository ofAcctMasterRepository;
     private final AcctBalRepository acctBalRepository;
@@ -60,17 +64,21 @@ public class StatementOfAccountsService {
         AccountDetailsDTO accountDetails = getAccountDetails(accountNo);
 
         // Step 3: Get opening balance
-        BigDecimal openingBalance = getOpeningBalance(accountNo, fromDate);
+        BigDecimal openingBalance = getOpeningBalance(accountNo, fromDate, accountDetails);
 
-        // Step 4: Query all transactions in date range
-        List<TxnHistAcct> transactions = txnHistAcctRepository
-                .findByAccNoAndTranDateBetweenOrderByTranDateAscRcreTimeAsc(accountNo, fromDate, toDate);
+        // Step 4: Query all posted transactions in date range
+        List<TxnHistAcct> transactions = new ArrayList<>(txnHistAcctRepository
+                .findByAccNoAndTranDateBetweenOrderByTranDateAscRcreTimeAsc(accountNo, fromDate, toDate));
+
+        // Step 4b: Append VERIFIED INT_PAY / MAT_PAY from tran_table (pre-BOD deal schedule rows).
+        // After BOD posts them they move to txn_hist_acct and are filtered out by the tranId check.
+        appendVerifiedDealScheduleRows(transactions, accountNo, fromDate, toDate, openingBalance);
 
         log.info("Found {} transactions for account {} in date range", transactions.size(), accountNo);
 
         // Step 5: Calculate closing balance
-        BigDecimal closingBalance = transactions.isEmpty() 
-                ? openingBalance 
+        BigDecimal closingBalance = transactions.isEmpty()
+                ? openingBalance
                 : transactions.get(transactions.size() - 1).getBalanceAfterTran();
 
         // Step 6: Generate Excel file
@@ -215,25 +223,83 @@ public class StatementOfAccountsService {
     }
 
     /**
-     * Get opening balance for the statement period
+     * Appends VERIFIED INT_PAY / MAT_PAY rows from tran_table to the existing
+     * txn_hist_acct list. Only rows whose tranId is not already in the list are
+     * appended, preventing duplicates once BOD posts them to txn_hist_acct.
+     * Running balance is computed by extending from the last known balance.
      */
-    private BigDecimal getOpeningBalance(String accountNo, LocalDate fromDate) {
-        // Try to get last transaction before fromDate
+    private void appendVerifiedDealScheduleRows(List<TxnHistAcct> transactions,
+                                                 String accountNo,
+                                                 LocalDate fromDate, LocalDate toDate,
+                                                 BigDecimal openingBalance) {
+        List<TranTable> verified = tranTableRepository
+                .findVerifiedDealScheduleTransactions(accountNo, fromDate, toDate);
+        if (verified.isEmpty()) return;
+
+        Set<String> existingTranIds = new HashSet<>();
+        for (TxnHistAcct t : transactions) existingTranIds.add(t.getTranId());
+
+        BigDecimal runningBalance = transactions.isEmpty()
+                ? openingBalance
+                : transactions.get(transactions.size() - 1).getBalanceAfterTran();
+
+        for (TranTable tran : verified) {
+            if (existingTranIds.contains(tran.getTranId())) continue;
+
+            BigDecimal amt = "BDT".equals(tran.getTranCcy()) ? tran.getLcyAmt() : tran.getFcyAmt();
+            if (amt == null) amt = BigDecimal.ZERO;
+
+            TxnHistAcct.TransactionType tranType = tran.getDrCrFlag() == TranTable.DrCrFlag.D
+                    ? TxnHistAcct.TransactionType.D : TxnHistAcct.TransactionType.C;
+
+            BigDecimal prevBalance = runningBalance;
+            runningBalance = tranType == TxnHistAcct.TransactionType.C
+                    ? runningBalance.add(amt)
+                    : runningBalance.subtract(amt);
+
+            TxnHistAcct row = new TxnHistAcct();
+            row.setBranchId("DEFAULT");
+            row.setAccNo(accountNo);
+            row.setTranId(tran.getTranId());
+            row.setTranDate(tran.getTranDate());
+            row.setValueDate(tran.getValueDate() != null ? tran.getValueDate() : tran.getTranDate());
+            row.setTranSlNo(1);
+            row.setNarration(tran.getNarration());
+            row.setTranType(tranType);
+            row.setTranAmt(amt);
+            row.setOpeningBalance(prevBalance);
+            row.setBalanceAfterTran(runningBalance);
+            row.setCurrencyCode(tran.getTranCcy() != null ? tran.getTranCcy() : "BDT");
+            row.setEntryUserId("SYSTEM");
+            row.setRcreDate(tran.getTranDate());
+            row.setRcreTime(LocalTime.MIDNIGHT);
+
+            transactions.add(row);
+        }
+    }
+
+    /**
+     * Get opening balance for the statement period.
+     * Primary: last balanceAfterTran from txn_hist_acct (already in statement convention).
+     * Fallback: acct_bal.currentBalance — stored in internal convention (negative for ALL
+     * accounts). Liability GLs (1xxx) must be negated to match statement convention;
+     * Asset GLs (2xxx) are negative in both conventions so no negation needed.
+     */
+    private BigDecimal getOpeningBalance(String accountNo, LocalDate fromDate, AccountDetailsDTO accountDetails) {
         Optional<TxnHistAcct> lastTransaction = txnHistAcctRepository.findLastTransactionBeforeDate(accountNo, fromDate);
         if (lastTransaction.isPresent()) {
             return lastTransaction.get().getBalanceAfterTran();
         }
 
-        // 3-tier fallback: Try previous day from acct_bal
+        boolean isLiability = accountDetails.getGlNum() != null && accountDetails.getGlNum().startsWith("1");
         Optional<AcctBal> previousDayBalance = acctBalRepository.findByAccountNoAndTranDate(
                 accountNo, fromDate.minusDays(1));
         if (previousDayBalance.isPresent()) {
-            return previousDayBalance.get().getCurrentBalance();
+            BigDecimal currentBalance = previousDayBalance.get().getCurrentBalance();
+            if (currentBalance == null) currentBalance = BigDecimal.ZERO;
+            return isLiability ? currentBalance.negate() : currentBalance;
         }
 
-        // Try last transaction date from acct_bal
-        // This would require a query to find the most recent acct_bal record
-        // For simplicity, we'll default to 0 if no history found
         log.debug("No opening balance found for account {}, defaulting to 0", accountNo);
         return BigDecimal.ZERO;
     }

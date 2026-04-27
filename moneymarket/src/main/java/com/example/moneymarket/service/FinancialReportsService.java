@@ -132,16 +132,16 @@ public class FinancialReportsService {
         }
 
         ensureFxGLsPresent(glBalances, reportDate);
-        ensurePositionGLsPresent(glBalances, reportDate);
+        // Position accounts (920xxx) are off-balance-sheet; do not include them here.
 
         // Separate Liabilities and Assets
         List<GLBalance> liabilities = glBalances.stream()
-                .filter(gl -> gl.getGlNum().startsWith("1"))
+                .filter(gl -> gl.getGlNum().startsWith("1") && !gl.getGlNum().startsWith("920"))
                 .sorted(Comparator.comparing(GLBalance::getGlNum))
                 .collect(Collectors.toList());
 
         List<GLBalance> assets = glBalances.stream()
-                .filter(gl -> gl.getGlNum().startsWith("2"))
+                .filter(gl -> gl.getGlNum().startsWith("2") && !gl.getGlNum().startsWith("920"))
                 .sorted(Comparator.comparing(GLBalance::getGlNum))
                 .collect(Collectors.toList());
 

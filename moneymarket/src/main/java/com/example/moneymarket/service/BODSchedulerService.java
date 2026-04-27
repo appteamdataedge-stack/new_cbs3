@@ -19,6 +19,8 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
@@ -28,9 +30,9 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * Accounting events per BRD Section 7:
  *   INT_PAY Liability: DR Interest Expenditure GL  → CR Term Deposit Account
- *   INT_PAY Asset:     DR Interest Receivable GL    → DR Loan Account  (tran_table DR; balance update CR)
+ *   INT_PAY Asset:     DR Loan Account             → CR Interest Income GL
  *   MAT_PAY Liability: DR Term Deposit Account     → CR Operative Account
- *   MAT_PAY Asset:     CR Loan Account             → CR Operative Account  (tran_table CR; balance update DR)
+ *   MAT_PAY Asset:     CR Loan Account             → DR Operative Account
  *
  * FIX: Each schedule runs in its own REQUIRES_NEW transaction via self-injection
  * (self.executeSingleSchedule) so that one failure does not roll back others.
@@ -164,7 +166,7 @@ public class BODSchedulerService {
 
     /**
      * INT_PAY Liability: DR Interest Expenditure GL → CR Term Deposit Account
-     * INT_PAY Asset:     DR Interest Receivable GL  → CR Loan Account
+     * INT_PAY Asset:     DR Loan Account            → CR Interest Income GL
      */
     private void processIntPay(DealSchedule schedule, CustAcctMaster dealAccount,
                                 SubProdMaster subProduct, String ccy, LocalDate businessDate) {
@@ -197,19 +199,18 @@ public class BODSchedulerService {
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.C, amount);
 
         } else {
-            // Asset INT_PAY: DR Interest Receivable GL → DR Loan Account (interest accrues on loan)
-            // Loan account entry uses DrCrFlag.D so the account statement shows a debit
-            // (interest increases what the customer owes). Balance update still uses C so
-            // currentBalance remains negative (more owed).
+            // Asset INT_PAY: DR Loan Account, CR Interest Income GL
+            // Interest accrues on the loan — the customer owes more (DR on loan account).
+            // Balance update uses C so currentBalance stays negative (more owed).
             String interestIncGL = subProduct.getInterestIncomePayableGLNum();
             if (interestIncGL == null) {
-                throw new IllegalStateException("Interest Receivable GL not configured for sub-product "
+                throw new IllegalStateException("Interest Income GL not configured for sub-product "
                         + subProduct.getSubProductCode());
             }
             saveTranEntry(buildTranEntry(baseTranId + "-1", businessDate, businessDate,
-                    DrCrFlag.D, null, interestIncGL, ccy, amount, narration, "BOD", EVENT_INT_PAY));
-            saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
                     DrCrFlag.D, schedule.getAccountNumber(), null, ccy, amount, narration, "BOD", EVENT_INT_PAY));
+            saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
+                    DrCrFlag.C, null, interestIncGL, ccy, amount, narration, "BOD", EVENT_INT_PAY));
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.C, amount);
         }
 
@@ -222,11 +223,7 @@ public class BODSchedulerService {
 
     /**
      * MAT_PAY Liability: DR Term Deposit Account → CR Operative Account
-     * MAT_PAY Asset:     CR Loan Account         → CR Operative Account
-     *
-     * For Asset (Loan) maturity: the loan account gets a CR entry (account statement shows
-     * customer repaying the debt). The balance update uses DR (add) to bring the negative
-     * loan balance back to zero. The operative account is CR'd (repayment received).
+     * MAT_PAY Asset:     CR Loan Account         → DR Operative Account
      */
     private void processMatPay(DealSchedule schedule, CustAcctMaster dealAccount,
                                 String ccy, LocalDate businessDate) {
@@ -260,15 +257,16 @@ public class BODSchedulerService {
 
         } else {
             // Asset MAT_PAY: loan closes out.
-            // CR Loan Account (statement shows credit = customer repays, zeroes balance)
-            // CR Operative Account (repayment funds credited to customer's account)
-            // Balance update uses DrCrFlag.D (add) to bring the negative loan balance back to 0.
+            // CR Loan Account (loan repaid — closes the asset)
+            // DR Operative Account (repayment debited from customer's operative)
+            // Loan balance update D: adds to currentBalance, bringing negative to 0.
+            // Operative balance update D: reduces bank's liability to customer (less negative).
             saveTranEntry(buildTranEntry(baseTranId + "-1", businessDate, businessDate,
                     DrCrFlag.C, schedule.getAccountNumber(), null, ccy, transferAmount, narration, "BOD", EVENT_MAT_PAY));
             saveTranEntry(buildTranEntry(baseTranId + "-2", businessDate, businessDate,
-                    DrCrFlag.C, operativeAccNo, null, ccy, transferAmount, narration, "BOD", EVENT_MAT_PAY));
+                    DrCrFlag.D, operativeAccNo, null, ccy, transferAmount, narration, "BOD", EVENT_MAT_PAY));
             balanceService.updateAccountBalance(schedule.getAccountNumber(), DrCrFlag.D, transferAmount);
-            balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.C, transferAmount);
+            balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.D, transferAmount);
         }
 
         // Mark deal account as Closed after maturity payment
@@ -353,15 +351,26 @@ public class BODSchedulerService {
             return bookedAmount;
         }
 
-        BigDecimal principal = getCurrentTDBalance(schedule.getAccountNumber());
-        if (principal.compareTo(BigDecimal.ZERO) <= 0) {
-            principal = getOriginalDealAmount(schedule.getAccountNumber());
+        // Running principal: abs(currentBalance) grows each period as interest is capitalised.
+        // Both Liability (TDCUM) and Asset (STLTR) accounts carry a negative currentBalance
+        // (D=add / C=subtract convention), so abs() gives the correct positive principal.
+        // Fallback to booked principal when acct_bal has no record yet (e.g. first BOD run).
+        BigDecimal principal = getCurrentTDBalance(schedule.getAccountNumber()).abs();
+        if (principal.compareTo(BigDecimal.ZERO) == 0) {
+            principal = getBookedPrincipalAmount(schedule);
         }
+
+        // Period days: last executed INT_PAY (or deal opening date) → this schedule date.
+        LocalDate periodStart = getPeriodStartDate(schedule);
+        long periodDays = ChronoUnit.DAYS.between(periodStart, asOfDate);
+        if (periodDays <= 0) periodDays = 1;
 
         BigDecimal interestRate = rateOpt.get().getInttRate();
         return principal
                 .multiply(interestRate)
-                .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
+                .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(periodDays))
+                .divide(BigDecimal.valueOf(365), 2, RoundingMode.HALF_UP);
     }
 
     private boolean isCompoundingDeal(CustAcctMaster dealAccount) {
@@ -385,12 +394,20 @@ public class BODSchedulerService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal getOriginalDealAmount(String accountNumber) {
-        return dealScheduleRepository.findByAccountNumber(accountNumber).stream()
-                .filter(s -> EVENT_MAT_PAY.equals(s.getEventCode()))
-                .map(s -> s.getScheduleAmount() != null ? s.getScheduleAmount() : BigDecimal.ZERO)
-                .findFirst()
-                .orElse(BigDecimal.ZERO);
+    /**
+     * Returns the period start date for a compounding INT_PAY schedule:
+     * - After the first period: the date of the last EXECUTED INT_PAY for this account.
+     * - First period: the deal opening date from CustAcctMaster.
+     */
+    private LocalDate getPeriodStartDate(DealSchedule schedule) {
+        return dealScheduleRepository.findByAccountNumberOrderByScheduleDateAsc(schedule.getAccountNumber()).stream()
+                .filter(s -> EVENT_INT_PAY.equals(s.getEventCode()))
+                .filter(s -> STATUS_EXECUTED.equals(s.getStatus()))
+                .map(DealSchedule::getScheduleDate)
+                .max(Comparator.naturalOrder())
+                .orElseGet(() -> custAcctMasterRepository.findById(schedule.getAccountNumber())
+                        .map(CustAcctMaster::getDateOpening)
+                        .orElse(schedule.getScheduleDate().minusDays(1)));
     }
 
     // -------------------------------------------------------------------------

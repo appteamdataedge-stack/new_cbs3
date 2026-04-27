@@ -252,6 +252,24 @@ public interface TranTableRepository extends JpaRepository<TranTable, String> {
     BigDecimal sumCreditLcyByAccountAndCcy(@Param("accountNo") String accountNo, @Param("tranCcy") String tranCcy);
 
     /**
+     * Find VERIFIED INT_PAY / MAT_PAY transactions for an account in a date range.
+     * Used by the account statement to show deal-schedule transactions before BOD posts them.
+     * After BOD posts them (status → Posted), createTransactionHistory writes them to
+     * txn_hist_acct, so this query stops returning them and the posted rows appear instead.
+     */
+    @Query(value = "SELECT * FROM Tran_Table " +
+                   "WHERE Account_No = :accountNo " +
+                   "AND Tran_Date BETWEEN :fromDate AND :toDate " +
+                   "AND Tran_Status = 'Verified' " +
+                   "AND (Narration LIKE '%INT_PAY%' OR Narration LIKE '%MAT_PAY%') " +
+                   "ORDER BY Value_Date, Tran_Id",
+           nativeQuery = true)
+    List<TranTable> findVerifiedDealScheduleTransactions(
+            @Param("accountNo") String accountNo,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate);
+
+    /**
      * Find all transactions starting with a specific transaction ID prefix
      * Used for revaluation reversal to find all related transactions
      *

@@ -12,6 +12,13 @@ import {
   Alert,
   CircularProgress,
   Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from '@mui/material';
 import {
   Assessment,
@@ -24,7 +31,9 @@ import {
   downloadTrialBalanceAllGLAccounts,
   downloadBalanceSheet,
   downloadSubproductGLBalance,
-  handleBatchJobError
+  fetchInterestBalanceReport,
+  handleBatchJobError,
+  type InterestBalanceReportRow,
 } from '../api/batchJobService';
 
 interface TabPanelProps {
@@ -45,12 +54,14 @@ function TabPanel(props: TabPanelProps) {
 const FinancialReports: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [loading, setLoading] = useState(false);
-  
+  const [interestRows, setInterestRows] = useState<InterestBalanceReportRow[]>([]);
+  const [interestLoading, setInterestLoading] = useState(false);
+
   // Report date - default to today
   const [reportDate, setReportDate] = useState(
     new Date().toISOString().split('T')[0]
   );
-  
+
   // Convert date format from YYYY-MM-DD to YYYYMMDD
   const formatDateForAPI = (date: string): string => {
     return date.replace(/-/g, '');
@@ -134,6 +145,18 @@ const FinancialReports: React.FC = () => {
     }
   };
 
+  const handleLoadInterestBalanceReport = async () => {
+    setInterestLoading(true);
+    try {
+      const data = await fetchInterestBalanceReport(reportDate);
+      setInterestRows(data);
+    } catch (error: any) {
+      toast.error(`Failed to load Interest Balance Report: ${handleBatchJobError(error)}`);
+    } finally {
+      setInterestLoading(false);
+    }
+  };
+
   /**
    * Download Subproduct GL Balance Report
    */
@@ -184,18 +207,21 @@ const FinancialReports: React.FC = () => {
                 value={reportDate}
                 onChange={(e) => setReportDate(e.target.value)}
                 fullWidth
-                InputLabelProps={{
-                  shrink: true,
-                }}
+                InputLabelProps={{ shrink: true }}
               />
             </Grid>
           </Grid>
 
-          <Box sx={{ mt: 4 }}>
-            <Typography variant="h6" gutterBottom>
-              Available Reports
-            </Typography>
+          <Box sx={{ mt: 3, borderBottom: 1, borderColor: 'divider' }}>
+            <Tabs value={tabValue} onChange={(_e, v) => setTabValue(v)}>
+              <Tab label="Download Reports" />
+              <Tab label="Interest Balance Report" />
+            </Tabs>
+          </Box>
 
+          {/* Tab 0: Download Reports */}
+          {tabValue === 0 && (
+          <Box sx={{ mt: 3 }}>
             <Grid container spacing={3}>
               {/* Trial Balance (Active GL Accounts) */}
               <Grid item xs={12} md={6}>
@@ -308,14 +334,74 @@ const FinancialReports: React.FC = () => {
                 </Card>
               </Grid>
             </Grid>
-          </Box>
 
-          <Alert severity="info" sx={{ mt: 3 }}>
-            <Typography variant="body2">
-              <strong>Note:</strong> The Trial Balance (All GL Accounts) report dynamically fetches ALL GL accounts from the gl_balance table. 
-              This report will automatically include any new GL accounts added to the system in the future, without requiring code changes.
-            </Typography>
-          </Alert>
+            <Alert severity="info" sx={{ mt: 3 }}>
+              <Typography variant="body2">
+                <strong>Note:</strong> The Trial Balance (All GL Accounts) report dynamically fetches ALL GL accounts from the gl_balance table.
+                This report will automatically include any new GL accounts added to the system in the future, without requiring code changes.
+              </Typography>
+            </Alert>
+          </Box>
+          )}
+
+          {/* Tab 1: Interest Balance Report */}
+          {tabValue === 1 && (
+          <Box sx={{ mt: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Shows interest-related GL accounts (130xxx, 140xxx, 230xxx, 240xxx) with rates and balances.
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={interestLoading ? <CircularProgress size={20} /> : <Assessment />}
+                onClick={handleLoadInterestBalanceReport}
+                disabled={interestLoading}
+              >
+                {interestLoading ? 'Loading...' : 'Load Report'}
+              </Button>
+            </Box>
+
+            {interestRows.length > 0 && (
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'grey.100' }}>
+                      <TableCell><strong>GL Code</strong></TableCell>
+                      <TableCell><strong>GL Name</strong></TableCell>
+                      <TableCell align="center"><strong>Interest Rate</strong></TableCell>
+                      <TableCell align="right"><strong>FCY Balance</strong></TableCell>
+                      <TableCell align="right"><strong>LCY Balance</strong></TableCell>
+                      <TableCell align="right"><strong>GL Balance</strong></TableCell>
+                      <TableCell align="center"><strong>Currency</strong></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {interestRows.map((row) => (
+                      <TableRow key={row.glCode} hover>
+                        <TableCell sx={{ fontFamily: 'monospace' }}>{row.glCode}</TableCell>
+                        <TableCell>{row.glName}</TableCell>
+                        <TableCell align="center">
+                          <Chip label={row.interestRate} size="small" color={row.interestRate === 'N/A' ? 'default' : 'primary'} variant="outlined" />
+                        </TableCell>
+                        <TableCell align="right">{row.fcyBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell align="right">{row.lcyBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell align="right">{row.glBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell align="center"><Chip label={row.currency} size="small" variant="outlined" /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+
+            {!interestLoading && interestRows.length === 0 && (
+              <Alert severity="info">
+                Click "Load Report" to fetch interest balance data for the selected date.
+              </Alert>
+            )}
+          </Box>
+          )}
+
         </CardContent>
       </Card>
     </Box>

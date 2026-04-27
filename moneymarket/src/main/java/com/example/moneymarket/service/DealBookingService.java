@@ -311,18 +311,21 @@ public class DealBookingService {
         String baseTranId = generateDealTranId(systemDate);
 
         // Liability TD: DR Operative (entry 1), CR Deal Account (entry 2)
-        // Asset Loan:   DR Operative (entry 1), DR Loan Account (entry 2)
-        //   — Asset entry 2 uses DR so the account statement shows the customer in debt;
-        //     balance update still uses C so currentBalance goes negative (D=add/C=subtract convention).
-        DrCrFlag dealAccountFlag = isLiability ? DrCrFlag.C : DrCrFlag.D;
+        // Asset Loan:   CR Operative (entry 1), DR Loan Account (entry 2)
+        //   Operative is CR for Asset because the bank disburses funds to the customer.
+        //   Loan account is DR so the account statement shows the customer in debt.
+        //   Balance updates: Liability operative = D (less negative = customer paid in);
+        //                    Asset operative     = C (more negative = bank owes more to customer).
+        DrCrFlag operativeFlag  = isLiability ? DrCrFlag.D : DrCrFlag.C;
+        DrCrFlag dealAcctFlag   = isLiability ? DrCrFlag.C : DrCrFlag.D;
 
         TranTable entry1 = buildTranTableEntry(
                 baseTranId + "-1", systemDate, request.getValueDate(),
-                DrCrFlag.D, operativeAccNo, null,
+                operativeFlag, operativeAccNo, null,
                 request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING");
         TranTable entry2 = buildTranTableEntry(
                 baseTranId + "-2", systemDate, request.getValueDate(),
-                dealAccountFlag, dealAccountNo, null,
+                dealAcctFlag, dealAccountNo, null,
                 request.getCurrencyCode(), amount, amount, narration, "DEAL", "BOOKING");
 
         // Save and record history BEFORE balance updates so opening balance is read correctly.
@@ -331,8 +334,8 @@ public class DealBookingService {
         tranTableRepository.save(entry2);
         transactionHistoryService.createTransactionHistory(entry2, SYSTEM_USER);
 
-        balanceService.updateAccountBalance(operativeAccNo, DrCrFlag.D, amount);
-        balanceService.updateAccountBalance(dealAccountNo, DrCrFlag.C, amount);
+        balanceService.updateAccountBalance(operativeAccNo, operativeFlag, amount);
+        balanceService.updateAccountBalance(dealAccountNo,  DrCrFlag.C,    amount);
 
         log.info("Initial funding posted: baseTranId={} isLiability={} amount={}",
                 baseTranId, isLiability, amount);
