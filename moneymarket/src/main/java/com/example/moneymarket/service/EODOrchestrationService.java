@@ -383,6 +383,9 @@ public class EODOrchestrationService {
         log.info("Starting Batch Job 8: Consolidated Financial Reports Generation");
 
         try {
+            // Reset stale FX/Position GL balances before generating reports
+            eodStep8ConsolidatedReportService.resetStaleGLBalances(systemDate);
+
             // Generate consolidated EOD Step 8 report with all sheets
             byte[] consolidatedReport = eodStep8ConsolidatedReportService.generateConsolidatedReport(systemDate);
             boolean reportsGenerated = consolidatedReport != null && consolidatedReport.length > 0;

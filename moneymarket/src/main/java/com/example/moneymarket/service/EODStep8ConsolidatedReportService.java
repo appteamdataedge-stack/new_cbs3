@@ -103,6 +103,30 @@ public class EODStep8ConsolidatedReportService {
     }
 
     /**
+     * Reset FX Gain/Loss and Position GL balances to zero for dates with no activity.
+     * Prevents stale carry-over values from prior FX days polluting reports on non-FX days.
+     * Only zeroes openingBal/closingBal when both drSummation and crSummation are zero.
+     */
+    @Transactional
+    public void resetStaleGLBalances(LocalDate eodDate) {
+        String[] glCodesToReset = {"140203001", "140203002", "240203001", "240203002", "920101001", "920101002"};
+
+        for (String glCode : glCodesToReset) {
+            Optional<GLBalance> glBalOpt = glBalanceRepository.findByGlNumAndTranDate(glCode, eodDate);
+            if (glBalOpt.isPresent()) {
+                GLBalance glBal = glBalOpt.get();
+                if (nvl(glBal.getDrSummation()).compareTo(BigDecimal.ZERO) == 0 &&
+                        nvl(glBal.getCrSummation()).compareTo(BigDecimal.ZERO) == 0) {
+                    glBal.setOpeningBal(BigDecimal.ZERO);
+                    glBal.setClosingBal(BigDecimal.ZERO);
+                    glBalanceRepository.save(glBal);
+                    log.info("Reset stale GL balance to zero: {} on {}", glCode, eodDate);
+                }
+            }
+        }
+    }
+
+    /**
      * Sheet 1: Trial Balance Report
      */
     private void generateTrialBalanceSheet(XSSFWorkbook workbook, LocalDate eodDate) {
@@ -114,8 +138,9 @@ public class EODStep8ConsolidatedReportService {
                 : glBalanceRepository.findByTranDateAndGlNumIn(eodDate, activeGLNumbers);
 
         ensureFxGLsPresent(glBalances, eodDate);
-        ensurePositionGLsPresent(glBalances, eodDate);
-        // Trial Balance must be sourced from gl_balance only.
+        // Exclude 920xxx position accounts — data is kept in gl_balance for historical tracking
+        // but these off-balance-sheet FCY inventory accounts are not shown in Trial Balance.
+        glBalances.removeIf(gl -> gl.getGlNum().startsWith("920"));
         glBalances.sort(Comparator.comparing(GLBalance::getGlNum));
 
         CellStyle headerStyle = createHeaderStyle(workbook);

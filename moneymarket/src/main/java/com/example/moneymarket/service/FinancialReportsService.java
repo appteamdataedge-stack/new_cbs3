@@ -96,7 +96,7 @@ public class FinancialReportsService {
         }
 
         ensureFxGLsPresent(glBalances, reportDate);
-        ensurePositionGLsPresent(glBalances, reportDate);
+        glBalances.removeIf(gl -> gl.getGlNum().startsWith("920"));
         return generateTrialBalanceReportFromBalancesAsBytes(glBalances, reportDate);
     }
 
@@ -745,9 +745,8 @@ public class FinancialReportsService {
         
         log.info("Found {} GL balance records for date: {}", glBalances.size(), reportDate);
 
-        // Ensure FX GL accounts are present (if not in results, fetch historical)
         ensureFxGLsPresent(glBalances, reportDate);
-        ensurePositionGLsPresent(glBalances, reportDate);
+        glBalances.removeIf(gl -> gl.getGlNum().startsWith("920"));
 
         return generateTrialBalanceReportFromBalancesAsBytes(glBalances, reportDate);
     }
